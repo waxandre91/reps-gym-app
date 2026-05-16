@@ -190,6 +190,7 @@ function blank() {
     sessions: [],
     activeSessionId: null,
     lastBackup: null,
+    weightLog: [], // [{date:'2026-05-16', kg:75.5}]
   };
 }
 function useAppState() {
@@ -198,6 +199,7 @@ function useAppState() {
     if (!loaded) return blank();
     if (!loaded.programs) loaded.programs = JSON.parse(JSON.stringify(TEMPLATES));
     if (!('lastBackup' in loaded)) loaded.lastBackup = null;
+    if (!loaded.weightLog) loaded.weightLog = [];
     return loaded;
   });
   React.useEffect(() => { saveS(s); }, [s]);
@@ -780,7 +782,7 @@ function WorkoutScreen({ sessionId, kind, sessions, update, T, onClose, programs
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:T.bg }}>
       {page==='list'&&<ExerciseList sess={sess} T={T} programs={programs} onSelect={i=>{setExIdx(i);setPage('exercise');}} onClose={()=>{update(s=>({...s,activeSessionId:null}));onClose();}} onComplete={completeWorkout} allDone={allDone} onWarmup={()=>setPage('warmup')}/>}
-      {page==='exercise'&&<ExerciseView sess={sess} exIdx={exIdx} updateSess={updateSess} T={T} onBack={()=>setPage('list')} onRest={startRest} onVideo={()=>setPage('video')} onNext={()=>{if(exIdx<sess.exercises.length-1){setExIdx(i=>i+1);}else setPage('list');}}/>}
+      {page==='exercise'&&<ExerciseView sess={sess} exIdx={exIdx} updateSess={updateSess} T={T} sessions={sessions} onBack={()=>setPage('list')} onRest={startRest} onVideo={()=>setPage('video')} onNext={()=>{if(exIdx<sess.exercises.length-1){setExIdx(i=>i+1);}else setPage('list');}}/>}
       {page==='rest'&&<RestTimer left={restLeft} total={restSec} T={T} onSkip={()=>{clearInterval(timerRef.current);setPage('exercise');}} onAdd={()=>setRestLeft(l=>l+15)}/>}
       {page==='complete'&&<WorkoutComplete sess={sess} T={T} programs={programs} onClose={onClose}/>}
       {page==='video'&&<VideoModal exName={sess.exercises[exIdx]?.name||''} T={T} onClose={()=>setPage('exercise')}/>}
@@ -791,11 +793,19 @@ function WorkoutScreen({ sessionId, kind, sessions, update, T, onClose, programs
 
 function ExerciseList({ sess, T, programs, onSelect, onClose, onComplete, allDone, onWarmup }) {
   const tmpl = (programs&&programs[sess.kind]) || TEMPLATES[sess.kind];
+  const [elapsed, setElapsed] = React.useState(0);
+  React.useEffect(() => {
+    const start = sess.startedAt ? new Date(sess.startedAt).getTime() : Date.now();
+    setElapsed(Date.now() - start);
+    const timer = setInterval(() => setElapsed(Date.now() - start), 1000);
+    return () => clearInterval(timer);
+  }, [sess.startedAt]);
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
       <div style={{ padding:'calc(env(safe-area-inset-top) + 12px) 16px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${T.rule}`, flexShrink:0 }}>
         <div>
-          <ML T={T} c={T.hi}>{tmpl?.name||sess.kind}</ML>
+          <ML T={T} c={T.hi}>{tmpl?.name||sess.kind} <span style={{ color:T.ink2 }}>· {fmtElapsed(elapsed)}</span></ML>
           <DL T={T} size={18} style={{ marginTop:3 }}>{tmpl?.sub||''}</DL>
         </div>
         <div style={{ display:'flex', gap:8 }}>
@@ -839,13 +849,45 @@ function ExerciseList({ sess, T, programs, onSelect, onClose, onComplete, allDon
   );
 }
 
-function ExerciseView({ sess, exIdx, updateSess, T, onBack, onRest, onVideo, onNext }) {
+function ExerciseView({ sess, exIdx, updateSess, T, sessions, onBack, onRest, onVideo, onNext }) {
   const ex = sess.exercises[exIdx];
   if (!ex) return null;
   const sets = ex.sets||[];
   const activeIdx = sets.findIndex(s=>!s.done);
   const [note, setNote] = React.useState('');
   const [showNote, setShowNote] = React.useState(false);
+
+  // last session data for this exercise
+  const lastData = React.useMemo(() => {
+    if (!sessions) return null;
+    const prev = [...sessions]
+      .filter(s => s.completedAt && s.id !== sess.id && s.kind === sess.kind)
+      .sort((a,b) => new Date(b.completedAt) - new Date(a.completedAt));
+    for (const s of prev) {
+      const e = (s.exercises||[]).find(e => e.name === ex.name);
+      if (e) return { sets: (e.sets||[]).filter(s=>s.done), date: s.date, allDone: (e.sets||[]).every(s=>s.done) };
+    }
+    return null;
+  }, [sessions, sess.id, sess.kind, ex.name]);
+
+  // progressive overload suggestion: +2.5 kg if last session all sets done
+  const suggestion = React.useMemo(() => {
+    if (!lastData || !lastData.allDone || lastData.sets.length === 0) return null;
+    const maxKg = Math.max(...lastData.sets.map(s => s.kg));
+    if (maxKg <= 0) return null; // bodyweight
+    return { kg: +(maxKg + 2.5).toFixed(1) };
+  }, [lastData]);
+
+  const applySuggestion = () => {
+    if (!suggestion) return;
+    updateSess(s => ({
+      ...s,
+      exercises: s.exercises.map((e,ei) => ei !== exIdx ? e : {
+        ...e,
+        sets: e.sets.map(set => set.done ? set : { ...set, kg: suggestion.kg }),
+      }),
+    }));
+  };
 
   const logSet = (si, reps, kg) => {
     updateSess(s=>{
@@ -886,6 +928,35 @@ function ExerciseView({ sess, exIdx, updateSess, T, onBack, onRest, onVideo, onN
       <div style={{ flex:1, overflowY:'auto', padding:'0 14px 8px' }}>
         <ML T={T} c={T.hi} ls={1} size={10}>{ex.name.toUpperCase()}{ex.bw?' · CORPO LIBERO':''}</ML>
         <DL T={T} size={24} style={{ marginTop:4 }}>{ex.name}</DL>
+
+        {/* last session chip */}
+        {lastData && lastData.sets.length > 0 && (
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:8, flexWrap:'wrap' }}>
+            <ML T={T} size={9} c={T.ink2}>ULTIMA VOLTA · {fmtDateShort(lastData.date).toUpperCase()}</ML>
+            <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+              {lastData.sets.slice(0,5).map((s,i)=>(
+                <span key={i} style={{ fontFamily:T.mono, fontSize:10, color:T.ink2, background:T.card2, padding:'2px 6px', borderRadius:4 }}>
+                  {s.reps}×{s.kg>0?s.kg+'kg':'BW'}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* progressive overload suggestion */}
+        {suggestion && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:8, padding:'8px 12px', background:T.card, borderRadius:10, border:`1px solid ${T.hi}44` }}>
+            <div>
+              <ML T={T} size={9} c={T.hi} ls={1}>PROGRESSIONE SUGGERITA</ML>
+              <div style={{ fontFamily:T.display, fontSize:13, fontWeight:700, marginTop:2, color:T.ink }}>
+                Prova <span style={{ color:T.hi }}>{suggestion.kg} kg</span> oggi
+              </div>
+            </div>
+            <button onClick={applySuggestion} style={{ padding:'7px 14px', borderRadius:8, background:T.hi, border:'none', color:T.hiInk, fontFamily:T.mono, fontSize:10, fontWeight:700, cursor:'pointer', letterSpacing:.5 }}>
+              APPLICA
+            </button>
+          </div>
+        )}
 
         {/* progress bar */}
         <div style={{ display:'flex', gap:3, marginTop:12 }}>
@@ -1326,15 +1397,67 @@ function CalendarScreen({ state, update, T, onStartWorkout, onEditProgram }) {
   );
 }
 
+// ─── HISTORY CARD ─────────────────────────────────────────────────────
+function HistoryCard({ sess, programs, T }) {
+  const [open, setOpen] = React.useState(false);
+  const tmpl = (programs&&programs[sess.kind]) || TEMPLATES[sess.kind];
+  const vol = sessVolume(sess);
+  const done = sessDone(sess);
+  const dur = sess.completedAt && sess.startedAt
+    ? Math.floor((new Date(sess.completedAt) - new Date(sess.startedAt)) / 1000) : 0;
+
+  return (
+    <div style={{ background:T.card, borderRadius:12, marginBottom:8, overflow:'hidden' }}>
+      <div onClick={()=>setOpen(!open)} style={{ display:'flex', alignItems:'center', padding:'12px 14px', cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+        <div style={{ width:6, height:6, borderRadius:6, background:T.hi, marginRight:10, flexShrink:0 }}/>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'baseline', gap:8 }}>
+            <div style={{ fontFamily:T.display, fontSize:14, fontWeight:700 }}>{tmpl?.name||sess.kind}</div>
+            <ML T={T} size={9} c={T.ink2}>{fmtDateShort(sess.date).toUpperCase()}</ML>
+          </div>
+          <div style={{ display:'flex', gap:10, marginTop:3 }}>
+            <ML T={T} size={9} c={T.ink2}>{done} serie</ML>
+            <ML T={T} size={9} c={T.ink2}>{vol>999?`${(vol/1000).toFixed(1)}t`:`${vol} kg`}</ML>
+            {dur>0&&<ML T={T} size={9} c={T.ink2}>{fmtElapsed(dur*1000)}</ML>}
+          </div>
+        </div>
+        <ML T={T} size={10} c={T.ink2}>{open?'▲':'▼'}</ML>
+      </div>
+      {open&&(
+        <div style={{ borderTop:`1px solid ${T.rule}`, padding:'8px 14px 12px' }}>
+          {(sess.exercises||[]).map((ex,i)=>{
+            const dones=(ex.sets||[]).filter(s=>s.done);
+            if(!dones.length) return null;
+            return (
+              <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', padding:'7px 0', borderBottom:`1px solid ${T.rule}` }}>
+                <div style={{ fontFamily:T.display, fontSize:13, fontWeight:600, flex:1, paddingRight:8 }}>{ex.name}</div>
+                <div style={{ display:'flex', gap:4, flexWrap:'wrap', justifyContent:'flex-end' }}>
+                  {dones.map((s,j)=>(
+                    <span key={j} style={{ fontFamily:T.mono, fontSize:10, color:T.ink2, background:T.bg, padding:'2px 6px', borderRadius:4 }}>
+                      {s.reps}×{s.kg>0?s.kg+'kg':'BW'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── STATS SCREEN ─────────────────────────────────────────────────────
 function StatsScreen({ state, T }) {
   const completedSessions = state.sessions.filter(s=>s.completedAt);
+  const allSessions = [...state.sessions].filter(s=>s.completedAt).reverse(); // newest first
+  const programs = state.programs || TEMPLATES;
   const streak = calcStreak(completedSessions);
   const totalVol = calcTotalVolume(completedSessions);
   const totalSets = calcTotalSets(completedSessions);
   const prs = calcPRs(completedSessions);
   const unlocked = checkAchievements(completedSessions);
-  const [tab, setTab] = React.useState('volume'); // volume | prs | streak | achievements
+  const [tab, setTab] = React.useState('volume'); // volume | prs | streak | achievements | history
 
   // last 8 weeks volume
   const weekVols = React.useMemo(()=>{
@@ -1371,7 +1494,7 @@ function StatsScreen({ state, T }) {
 
       {/* tab pills */}
       <div style={{ display:'flex', gap:6, padding:'0 14px 10px', overflowX:'auto' }}>
-        {[['volume','Volume'],['prs','Record'],['streak','Streak'],['achievements','Badge']].map(([k,l])=>(
+        {[['volume','Volume'],['prs','Record'],['streak','Streak'],['achievements','Badge'],['history','Storico']].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{ padding:'7px 14px', borderRadius:100, background:tab===k?T.hi:T.card, color:tab===k?T.hiInk:T.ink2, border:'none', cursor:'pointer', fontFamily:T.mono, fontSize:10, letterSpacing:.5, flexShrink:0, WebkitTapHighlightColor:'transparent' }}>{l}</button>
         ))}
       </div>
@@ -1468,7 +1591,59 @@ function StatsScreen({ state, T }) {
           </div>
         </div>
       )}
+
+      {tab==='history'&&(
+        <div style={{ padding:'0 14px 8px' }}>
+          {allSessions.length===0&&(
+            <div style={{ textAlign:'center', padding:'40px 0' }}>
+              <div style={{ fontSize:36, marginBottom:8 }}>📋</div>
+              <div style={{ fontSize:14, color:T.ink2 }}>Nessuna sessione completata ancora.</div>
+            </div>
+          )}
+          {allSessions.map(sess=>(
+            <HistoryCard key={sess.id} sess={sess} programs={programs} T={T}/>
+          ))}
+        </div>
+      )}
     </Scr>
+  );
+}
+
+// ─── WEIGHT SPARKLINE ─────────────────────────────────────────────────
+function WeightSparkline({ log, T }) {
+  if (log.length < 2) return null;
+  const sorted = [...log].sort((a,b)=>a.date.localeCompare(b.date)).slice(-12);
+  const vals = sorted.map(e=>e.kg);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const W = 280, H = 52, pad = 6;
+  const pts = sorted.map((e,i)=>{
+    const x = pad + (i/(sorted.length-1))*(W-pad*2);
+    const y = H - pad - ((e.kg-min)/range)*(H-pad*2);
+    return `${x},${y}`;
+  }).join(' ');
+  const last = sorted[sorted.length-1];
+  const first = sorted[0];
+  const diff = +(last.kg - first.kg).toFixed(1);
+  return (
+    <div style={{ marginTop:12 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+        <ML T={T} size={9} c={T.ink2}>ULTIME {sorted.length} MISURAZIONI</ML>
+        <ML T={T} size={9} c={diff<0?T.hi:diff>0?T.red:T.ink2}>{diff>0?'+':''}{diff} kg</ML>
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display:'block' }}>
+        <polyline points={pts} fill="none" stroke={T.hi} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+        {sorted.map((e,i)=>{
+          const x = pad + (i/(sorted.length-1))*(W-pad*2);
+          const y = H - pad - ((e.kg-min)/range)*(H-pad*2);
+          return <circle key={i} cx={x} cy={y} r="3" fill={i===sorted.length-1?T.hi:T.card2} stroke={T.hi} strokeWidth="1.5"/>;
+        })}
+      </svg>
+      <div style={{ display:'flex', justifyContent:'space-between' }}>
+        <ML T={T} size={8} c={T.ink2}>{first.date.slice(5)}</ML>
+        <ML T={T} size={8} c={T.ink2}>{last.date.slice(5)}</ML>
+      </div>
+    </div>
   );
 }
 
@@ -1477,8 +1652,20 @@ function ProfileScreen({ state, update, T }) {
   const p = state.profile;
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState({ ...p });
+  const weightLog = state.weightLog || [];
+  const todayKg = weightLog.find(e=>e.date===todayStr())?.kg || p.weight;
+  const [newKg, setNewKg] = React.useState(todayKg);
 
   const bmi = (() => { const h=p.height/100; return h?(p.weight/(h*h)).toFixed(1):0; })();
+
+  const logWeight = () => {
+    const entry = { date: todayStr(), kg: newKg };
+    update(s => ({
+      ...s,
+      weightLog: [...(s.weightLog||[]).filter(e=>e.date!==todayStr()), entry],
+      profile: { ...s.profile, weight: newKg },
+    }));
+  };
 
   const saveProfile = () => {
     update(s=>({ ...s, profile:draft }));
@@ -1571,6 +1758,27 @@ function ProfileScreen({ state, update, T }) {
               ))}
             </div>
           )}
+        </Card>
+      </div>
+
+      {/* Weight log */}
+      <div style={{ margin:'12px 14px 0' }}>
+        <Card T={T} pad="14px">
+          <ML T={T} size={9} c={T.hi}>PESO · LOG</ML>
+          <WeightSparkline log={weightLog} T={T}/>
+          {weightLog.length === 0 && (
+            <div style={{ marginTop:8, color:T.ink2, fontSize:12, fontFamily:T.display }}>Inizia a registrare il tuo peso per vedere il grafico.</div>
+          )}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
+            <div>
+              <ML T={T} size={9} ls={1}>OGGI</ML>
+              <div style={{ fontFamily:T.mono, fontSize:22, color:T.ink, marginTop:2 }}>{newKg} kg</div>
+            </div>
+            <Stepper value={newKg} onChange={setNewKg} step={0.5} min={30} max={250} T={T}/>
+          </div>
+          <PBtn onClick={logWeight} T={T} style={{ marginTop:12 }}>
+            Registra {I.check(T.hiInk,16)}
+          </PBtn>
         </Card>
       </div>
 
@@ -1689,6 +1897,16 @@ function ProgramEditorScreen({ progKey, programs, update, T, onClose }) {
 
       {/* exercises list */}
       <div style={{ flex:1, overflowY:'auto', padding:'10px 14px' }}>
+        {/* Name + subtitle editing */}
+        <div style={{ padding:'12px 14px', background:T.card, borderRadius:12, marginBottom:14 }}>
+          <ML T={T} size={9} ls={1} style={{ display:'block', marginBottom:6 }}>NOME SCHEDA</ML>
+          <input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}
+            style={{ width:'100%', padding:'10px 12px', background:T.bg, border:`1px solid ${T.rule}`, borderRadius:8, color:T.ink, fontSize:18, fontFamily:T.display, fontWeight:700, outline:'none' }}/>
+          <ML T={T} size={9} ls={1} style={{ display:'block', marginTop:10, marginBottom:6 }}>SOTTOTITOLO</ML>
+          <input value={draft.sub||''} onChange={e=>setDraft({...draft,sub:e.target.value})}
+            style={{ width:'100%', padding:'8px 12px', background:T.bg, border:`1px solid ${T.rule}`, borderRadius:8, color:T.ink2, fontSize:13, fontFamily:T.display, outline:'none' }}/>
+        </div>
+
         <ML T={T} size={9} style={{ display:'block', marginBottom:8 }}>ESERCIZI ({draft.exercises.length})</ML>
 
         {draft.exercises.map((ex,i)=>(
@@ -1827,7 +2045,7 @@ function App() {
       {/* Tab screens (always rendered, one at a time) */}
       {tab==='home'&&<HomeScreen state={state} update={update} T={T} onStartWorkout={startWorkout}/>}
       {tab==='cal'&&<CalendarScreen state={state} update={update} T={T} onStartWorkout={startWorkout} onEditProgram={k=>{setEditProgKey(k);}}/>}
-      {tab==='stats'&&<StatsScreen state={state} T={T}/>}
+      {tab==='stats'&&<StatsScreen state={state} T={T} programs={programs}/>}
       {tab==='me'&&<ProfileScreen state={state} update={update} T={T}/>}
 
       {/* Backup banner — shown above tab bar when due */}
