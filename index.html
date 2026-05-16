@@ -97,6 +97,54 @@ const WARMUP = {
 
 const DEF_SCHEDULE = { 0:null, 1:'push', 2:'pull', 3:null, 4:'legs', 5:null, 6:'push' };
 
+const EXERCISE_LIB = [
+  { name:'Panca piana',           muscle:'Petto',     bw:false },
+  { name:'Panca inclinata',       muscle:'Petto',     bw:false },
+  { name:'Panca declinata',       muscle:'Petto',     bw:false },
+  { name:'Panca piana manubri',   muscle:'Petto',     bw:false },
+  { name:'Croci manubri',         muscle:'Petto',     bw:false },
+  { name:'Push-up',               muscle:'Petto',     bw:true  },
+  { name:'Dip',                   muscle:'Petto',     bw:true  },
+  { name:'Cavo croci',            muscle:'Petto',     bw:false },
+  { name:'Trazioni',              muscle:'Schiena',   bw:true  },
+  { name:'Rematore bilanciere',   muscle:'Schiena',   bw:false },
+  { name:'Rematore manubrio',     muscle:'Schiena',   bw:false },
+  { name:'Lat machine',           muscle:'Schiena',   bw:false },
+  { name:'Facepull',              muscle:'Schiena',   bw:false },
+  { name:'Stacco da terra',       muscle:'Schiena',   bw:false },
+  { name:'Pulley basso',          muscle:'Schiena',   bw:false },
+  { name:'Military press',        muscle:'Spalle',    bw:false },
+  { name:'Alzate laterali',       muscle:'Spalle',    bw:false },
+  { name:'Alzate frontali',       muscle:'Spalle',    bw:false },
+  { name:'Lento avanti manubri',  muscle:'Spalle',    bw:false },
+  { name:'Arnold press',          muscle:'Spalle',    bw:false },
+  { name:'Curl bilanciere',       muscle:'Bicipiti',  bw:false },
+  { name:'Curl manubri',          muscle:'Bicipiti',  bw:false },
+  { name:'Curl martello',         muscle:'Bicipiti',  bw:false },
+  { name:'Curl concentrazione',   muscle:'Bicipiti',  bw:false },
+  { name:'Curl con cavo',         muscle:'Bicipiti',  bw:false },
+  { name:'Push-down tricipiti',   muscle:'Tricipiti', bw:false },
+  { name:'French press',          muscle:'Tricipiti', bw:false },
+  { name:'Kickback tricipiti',    muscle:'Tricipiti', bw:false },
+  { name:'Skull crusher',         muscle:'Tricipiti', bw:false },
+  { name:'Dip stretti',           muscle:'Tricipiti', bw:true  },
+  { name:'Squat bilanciere',      muscle:'Gambe',     bw:false },
+  { name:'Leg press',             muscle:'Gambe',     bw:false },
+  { name:'Stacco rumeno',         muscle:'Gambe',     bw:false },
+  { name:'Affondi',               muscle:'Gambe',     bw:true  },
+  { name:'Leg curl',              muscle:'Gambe',     bw:false },
+  { name:'Leg extension',         muscle:'Gambe',     bw:false },
+  { name:'Calf raise',            muscle:'Gambe',     bw:false },
+  { name:'Hip thrust',            muscle:'Glutei',    bw:false },
+  { name:'Sumo squat',            muscle:'Glutei',    bw:false },
+  { name:'Glute bridge',          muscle:'Glutei',    bw:true  },
+  { name:'Plank',                 muscle:'Core',      bw:true  },
+  { name:'Crunch',                muscle:'Core',      bw:true  },
+  { name:'Russian twist',         muscle:'Core',      bw:true  },
+  { name:'Leg raise',             muscle:'Core',      bw:true  },
+  { name:'Mountain climber',      muscle:'Core',      bw:true  },
+];
+
 const ACHIEVEMENTS = [
   { id:'first',     icon:'🏋️', label:'Prima sessione',   desc:'Hai completato il tuo primo allenamento!' },
   { id:'streak5',   icon:'🔥', label:'Streak 5 giorni',  desc:'5 giorni consecutivi di allenamento.'    },
@@ -138,12 +186,18 @@ function blank() {
     profile: { name:'', sex:'M', age:28, weight:75, height:178, goal:'mass' },
     prefs: { mode:'dark', accent:'#c5f24a' },
     schedule: { ...DEF_SCHEDULE },
+    programs: JSON.parse(JSON.stringify(TEMPLATES)),
     sessions: [],
     activeSessionId: null,
   };
 }
 function useAppState() {
-  const [s, setS] = React.useState(() => loadS() || blank());
+  const [s, setS] = React.useState(() => {
+    const loaded = loadS();
+    if (!loaded) return blank();
+    if (!loaded.programs) loaded.programs = JSON.parse(JSON.stringify(TEMPLATES));
+    return loaded;
+  });
   React.useEffect(() => { saveS(s); }, [s]);
   const upd = React.useCallback((fn) => {
     setS(p => typeof fn === 'function' ? fn(p) : { ...p, ...fn });
@@ -247,8 +301,8 @@ function AppFrame({ children, T }) {
     document.body.style.background = T.bg;
   }, [T.bg]);
   return (
-    <div style={{ minHeight:'100dvh', background:T.bg, color:T.ink, fontFamily:T.body, display:'flex', justifyContent:'center' }}>
-      <div style={{ width:'100%', maxWidth:430, minHeight:'100dvh', display:'flex', flexDirection:'column', background:T.bg, boxShadow:'0 0 80px rgba(0,0,0,.5)', position:'relative' }}>
+    <div style={{ height:'100dvh', overflow:'hidden', background:T.bg, color:T.ink, fontFamily:T.body, display:'flex', justifyContent:'center' }}>
+      <div style={{ width:'100%', maxWidth:430, height:'100%', display:'flex', flexDirection:'column', background:T.bg, boxShadow:'0 0 80px rgba(0,0,0,.5)', position:'relative', overflow:'hidden' }}>
         {children}
       </div>
     </div>
@@ -492,7 +546,7 @@ function OnbGoal({ draft, setDraft, T }) {
 function HomeScreen({ state, update, T, onStartWorkout }) {
   const profile = state.profile;
   const kind = state.schedule[new Date().getDay()];
-  const tmpl = kind ? TEMPLATES[kind] : null;
+  const tmpl = kind ? (state.programs?.[kind] || TEMPLATES[kind]) : null;
   const active = state.sessions.find(s=>s.id===state.activeSessionId);
   const completedSessions = state.sessions.filter(s=>s.completedAt);
   const streak = calcStreak(completedSessions);
@@ -540,7 +594,7 @@ function HomeScreen({ state, update, T, onStartWorkout }) {
           <div>
             <ML T={T} c={T.hiInk} ls={1}>Allenamento in corso</ML>
             <div style={{ fontFamily:T.display, fontSize:15, fontWeight:700, color:T.hiInk, marginTop:2 }}>
-              {TEMPLATES[active.kind]?.name||active.kind} · {sessDone(active)}/{sessTotal(active)} serie
+              {(state.programs?.[active.kind]||TEMPLATES[active.kind])?.name||active.kind} · {sessDone(active)}/{sessTotal(active)} serie
             </div>
           </div>
           {I.arr(T.hiInk,18)}
@@ -580,9 +634,9 @@ function HomeScreen({ state, update, T, onStartWorkout }) {
               <DL T={T} size={22} style={{ marginTop:6, color:T.ink2 }}>Giorno di riposo</DL>
               <div style={{ marginTop:14, paddingTop:12, borderTop:`1px solid ${T.rule}` }}>
                 <div style={{ display:'flex', gap:8 }}>
-                  {Object.keys(TEMPLATES).map(k=>(
+                  {Object.keys(state.programs||TEMPLATES).map(k=>(
                     <div key={k} onClick={()=>onStartWorkout(k,null)} style={{ flex:1, padding:'8px 4px', background:T.bg, borderRadius:8, textAlign:'center', cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
-                      <div style={{ fontFamily:T.mono, fontSize:10, color:T.ink2 }}>{TEMPLATES[k].name}</div>
+                      <div style={{ fontFamily:T.mono, fontSize:10, color:T.ink2 }}>{(state.programs?.[k]||TEMPLATES[k]).name}</div>
                     </div>
                   ))}
                 </div>
@@ -629,7 +683,7 @@ function HomeScreen({ state, update, T, onStartWorkout }) {
 }
 
 // ─── WORKOUT SCREEN ───────────────────────────────────────────────────
-function WorkoutScreen({ sessionId, kind, sessions, update, T, onClose }) {
+function WorkoutScreen({ sessionId, kind, sessions, update, T, onClose, programs }) {
   const [page, setPage] = React.useState('list'); // list | exercise | rest | complete | video | warmup
   const [exIdx, setExIdx] = React.useState(0);
   const [restSec, setRestSec] = React.useState(90);
@@ -666,19 +720,19 @@ function WorkoutScreen({ sessionId, kind, sessions, update, T, onClose }) {
   const allDone = sess.exercises.every(ex=>(ex.sets||[]).every(set=>set.done));
 
   return (
-    <div style={{ position:'fixed', inset:0, background:T.bg, zIndex:50, display:'flex', flexDirection:'column', maxWidth:430, margin:'0 auto', left:0, right:0 }} className="slide-up">
-      {page==='list'&&<ExerciseList sess={sess} T={T} onSelect={i=>{setExIdx(i);setPage('exercise');}} onClose={()=>{update(s=>({...s,activeSessionId:null}));onClose();}} onComplete={completeWorkout} allDone={allDone} onWarmup={()=>setPage('warmup')}/>}
+    <div style={{ display:'flex', flexDirection:'column', height:'100%', background:T.bg }}>
+      {page==='list'&&<ExerciseList sess={sess} T={T} programs={programs} onSelect={i=>{setExIdx(i);setPage('exercise');}} onClose={()=>{update(s=>({...s,activeSessionId:null}));onClose();}} onComplete={completeWorkout} allDone={allDone} onWarmup={()=>setPage('warmup')}/>}
       {page==='exercise'&&<ExerciseView sess={sess} exIdx={exIdx} updateSess={updateSess} T={T} onBack={()=>setPage('list')} onRest={startRest} onVideo={()=>setPage('video')} onNext={()=>{if(exIdx<sess.exercises.length-1){setExIdx(i=>i+1);}else setPage('list');}}/>}
       {page==='rest'&&<RestTimer left={restLeft} total={restSec} T={T} onSkip={()=>{clearInterval(timerRef.current);setPage('exercise');}} onAdd={()=>setRestLeft(l=>l+15)}/>}
-      {page==='complete'&&<WorkoutComplete sess={sess} T={T} onClose={onClose}/>}
+      {page==='complete'&&<WorkoutComplete sess={sess} T={T} programs={programs} onClose={onClose}/>}
       {page==='video'&&<VideoModal exName={sess.exercises[exIdx]?.name||''} T={T} onClose={()=>setPage('exercise')}/>}
       {page==='warmup'&&<WarmupScreen kind={sess.kind} T={T} onClose={()=>setPage('list')}/>}
     </div>
   );
 }
 
-function ExerciseList({ sess, T, onSelect, onClose, onComplete, allDone, onWarmup }) {
-  const tmpl = TEMPLATES[sess.kind];
+function ExerciseList({ sess, T, programs, onSelect, onClose, onComplete, allDone, onWarmup }) {
+  const tmpl = (programs&&programs[sess.kind]) || TEMPLATES[sess.kind];
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
       <div style={{ padding:'calc(env(safe-area-inset-top) + 12px) 16px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${T.rule}`, flexShrink:0 }}>
@@ -1010,11 +1064,11 @@ function WarmupScreen({ kind, T, onClose }) {
   );
 }
 
-function WorkoutComplete({ sess, T, onClose }) {
+function WorkoutComplete({ sess, T, programs, onClose }) {
   const vol = sessVolume(sess);
   const done = sessDone(sess);
   const dur = sess.completedAt&&sess.startedAt ? Math.floor((new Date(sess.completedAt)-new Date(sess.startedAt))/1000) : 0;
-  const tmpl = TEMPLATES[sess.kind];
+  const tmpl = (programs&&programs[sess.kind]) || TEMPLATES[sess.kind];
 
   // confetti pieces
   const confetti = React.useMemo(()=>Array.from({length:20},(_,i)=>({
@@ -1059,11 +1113,12 @@ function WorkoutComplete({ sess, T, onClose }) {
 }
 
 // ─── CALENDAR SCREEN ──────────────────────────────────────────────────
-function CalendarScreen({ state, update, T, onStartWorkout }) {
+function CalendarScreen({ state, update, T, onStartWorkout, onEditProgram }) {
   const now = new Date();
   const [viewYear, setViewYear] = React.useState(now.getFullYear());
   const [viewMonth, setViewMonth] = React.useState(now.getMonth());
   const completedSessions = state.sessions.filter(s=>s.completedAt);
+  const programs = state.programs || TEMPLATES;
 
   // build heatmap
   const heatmap = React.useMemo(()=>{
@@ -1096,7 +1151,7 @@ function CalendarScreen({ state, update, T, onStartWorkout }) {
     const d=new Date(); d.setDate(d.getDate()+i);
     const dow=d.getDay();
     const kind=state.schedule[dow];
-    if(kind) upcoming.push({ date:fmtDateShort(d), label:i===0?'OGGI':i===1?'DOMANI':`+${i}g`, kind, tmpl:TEMPLATES[kind] });
+    if(kind) upcoming.push({ date:fmtDateShort(d), label:i===0?'OGGI':i===1?'DOMANI':`+${i}g`, kind, tmpl:programs[kind]||TEMPLATES[kind] });
   }
 
   const prevMonth=()=>{ if(viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); };
@@ -1153,17 +1208,17 @@ function CalendarScreen({ state, update, T, onStartWorkout }) {
         {['L','M','M','G','V','S','D'].map((label,i)=>{
           const dow=(i+1)%7;
           const kind=state.schedule[dow];
-          const tmpl=kind?TEMPLATES[kind]:null;
+          const prog=kind?(programs[kind]||TEMPLATES[kind]):null;
           return (
             <div key={i} style={{ flexShrink:0, width:42, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
               <ML T={T} size={9}>{label}</ML>
               <div onClick={()=>{
-                const kinds=Object.keys(TEMPLATES);
+                const kinds=Object.keys(programs);
                 const curr=kinds.indexOf(kind);
                 const next=curr===-1?kinds[0]:(curr===kinds.length-1?null:kinds[curr+1]);
                 update(s=>({...s,schedule:{...s.schedule,[dow]:next}}));
               }} style={{ width:42, height:42, borderRadius:10, background:kind?T.card2:T.card, border:`1px solid ${kind?T.hi:T.rule}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
-                {kind?<ML T={T} size={9} c={T.hi}>{TEMPLATES[kind].name.slice(0,2)}</ML>:<ML T={T} size={9}>—</ML>}
+                {kind?<ML T={T} size={9} c={T.hi}>{prog.name.slice(0,2)}</ML>:<ML T={T} size={9}>—</ML>}
               </div>
             </div>
           );
@@ -1186,6 +1241,26 @@ function CalendarScreen({ state, update, T, onStartWorkout }) {
               <ML T={T} size={9} c={T.ink2}>{u.tmpl.sub}</ML>
             </div>
             {I.arr(T.ink2,14)}
+          </div>
+        ))}
+      </div>
+
+      {/* Programs editor */}
+      <div style={{ height:1, background:T.rule, margin:'14px 14px 0' }}/>
+      <div style={{ padding:'12px 14px 0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <ML T={T} size={9}>SCHEDE ALLENAMENTO</ML>
+        <ML T={T} size={9} c={T.ink2}>tap per modificare</ML>
+      </div>
+      <div style={{ padding:'8px 14px 20px', display:'flex', flexDirection:'column', gap:8 }}>
+        {Object.entries(programs).map(([key,prog])=>(
+          <div key={key} style={{ display:'flex', alignItems:'center', padding:'12px 14px', background:T.card, borderRadius:12 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontFamily:T.display, fontSize:14, fontWeight:700 }}>{prog.name}</div>
+              <ML T={T} size={9} c={T.ink2}>{prog.sub} · {prog.exercises.length} esercizi</ML>
+            </div>
+            <button onClick={()=>onEditProgram(key)} style={{ padding:'7px 14px', borderRadius:8, background:T.card2, border:'none', color:T.ink, fontFamily:T.mono, fontSize:10, cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
+              {I.edit(T.ink,12)} MODIFICA
+            </button>
           </div>
         ))}
       </div>
@@ -1469,13 +1544,153 @@ function ProfileScreen({ state, update, T }) {
   );
 }
 
+// ─── PROGRAM EDITOR ───────────────────────────────────────────────────
+function ProgramEditorScreen({ progKey, programs, update, T, onClose }) {
+  const prog = programs[progKey];
+  const [draft, setDraft] = React.useState(JSON.parse(JSON.stringify(prog)));
+  const [showLib, setShowLib] = React.useState(false);
+
+  const save = () => {
+    update(s=>({ ...s, programs:{ ...s.programs, [progKey]:draft } }));
+    onClose();
+  };
+
+  const removeEx = (i) => {
+    setDraft(d=>({ ...d, exercises:d.exercises.filter((_,j)=>j!==i) }));
+  };
+
+  const addEx = (ex) => {
+    setDraft(d=>({ ...d, exercises:[...d.exercises,{ name:ex.name, bw:ex.bw||false, targetSets:3, targetReps:10 }] }));
+    setShowLib(false);
+  };
+
+  const updEx = (i, field, val) => {
+    setDraft(d=>{
+      const exs=[...d.exercises];
+      exs[i]={...exs[i],[field]:val};
+      return {...d,exercises:exs};
+    });
+  };
+
+  return (
+    <div style={{ position:'absolute', inset:0, zIndex:200, background:T.bg, display:'flex', flexDirection:'column' }} className="slide-up">
+      {/* header */}
+      <div style={{ padding:'calc(env(safe-area-inset-top) + 12px) 16px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${T.rule}`, flexShrink:0 }}>
+        <div>
+          <ML T={T} c={T.hi} ls={1}>{draft.name.toUpperCase()}</ML>
+          <DL T={T} size={20} style={{ marginTop:2 }}>Modifica scheda</DL>
+        </div>
+        <button onClick={onClose} style={{ width:32, height:32, borderRadius:8, background:T.card, border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>{I.close(T.ink,16)}</button>
+      </div>
+
+      {/* exercises list */}
+      <div style={{ flex:1, overflowY:'auto', padding:'10px 14px' }}>
+        <ML T={T} size={9} style={{ display:'block', marginBottom:8 }}>ESERCIZI ({draft.exercises.length})</ML>
+
+        {draft.exercises.map((ex,i)=>(
+          <div key={i} style={{ padding:'12px 14px', background:T.card, borderRadius:12, marginBottom:8 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div style={{ fontFamily:T.display, fontSize:14, fontWeight:600, flex:1 }}>{ex.name}</div>
+              <button onClick={()=>removeEx(i)} style={{ width:28, height:28, borderRadius:8, background:'transparent', border:`1px solid ${T.red}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', marginLeft:8 }}>
+                {I.close(T.red,12)}
+              </button>
+            </div>
+            <div style={{ display:'flex', gap:16, marginTop:10, alignItems:'center' }}>
+              <div>
+                <ML T={T} size={8} ls={1} style={{ display:'block', marginBottom:4 }}>SERIE</ML>
+                <Stepper value={ex.targetSets} onChange={v=>updEx(i,'targetSets',v)} min={1} max={10} T={T}/>
+              </div>
+              <div>
+                <ML T={T} size={8} ls={1} style={{ display:'block', marginBottom:4 }}>REPS</ML>
+                <Stepper value={ex.targetReps} onChange={v=>updEx(i,'targetReps',v)} min={1} max={60} T={T}/>
+              </div>
+              {ex.bw&&<ML T={T} size={9} c={T.ink2}>CORPO LIBERO</ML>}
+            </div>
+          </div>
+        ))}
+
+        <button onClick={()=>setShowLib(true)} style={{ width:'100%', padding:'14px', borderRadius:12, border:`1px dashed ${T.rule}`, background:'transparent', color:T.ink2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:T.display, fontSize:14 }}>
+          {I.plus(T.ink2,16)} Aggiungi esercizio
+        </button>
+      </div>
+
+      {/* footer */}
+      <div style={{ padding:'12px 14px calc(14px + env(safe-area-inset-bottom))', background:T.bg, borderTop:`1px solid ${T.rule}`, flexShrink:0 }}>
+        <PBtn onClick={save} T={T}>SALVA SCHEDA {I.check(T.hiInk,16)}</PBtn>
+      </div>
+
+      {showLib&&<ExerciseLibModal T={T} onAdd={addEx} onClose={()=>setShowLib(false)} existing={draft.exercises.map(e=>e.name)}/>}
+    </div>
+  );
+}
+
+function ExerciseLibModal({ T, onAdd, onClose, existing }) {
+  const [search, setSearch] = React.useState('');
+  const [custom, setCustom] = React.useState('');
+
+  const filtered = EXERCISE_LIB.filter(e=>
+    !existing.includes(e.name) &&
+    (!search || e.name.toLowerCase().includes(search.toLowerCase()) || e.muscle.toLowerCase().includes(search.toLowerCase()))
+  );
+  const muscles = [...new Set(filtered.map(e=>e.muscle))];
+
+  return (
+    <div style={{ position:'absolute', inset:0, zIndex:300, background:'rgba(0,0,0,.7)', display:'flex', flexDirection:'column', justifyContent:'flex-end' }}>
+      <div style={{ background:T.card, borderRadius:'20px 20px 0 0', display:'flex', flexDirection:'column', maxHeight:'82%' }} className="slide-up">
+        <div style={{ padding:'14px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${T.rule}`, flexShrink:0 }}>
+          <DL T={T} size={18}>Libreria esercizi</DL>
+          <button onClick={onClose} style={{ width:32, height:32, borderRadius:8, background:T.bg, border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>{I.close(T.ink,16)}</button>
+        </div>
+        <div style={{ padding:'10px 14px', flexShrink:0 }}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cerca per nome o muscolo..."
+            style={{ width:'100%', padding:'10px 14px', background:T.bg, border:`1px solid ${T.rule}`, borderRadius:10, color:T.ink, fontSize:14, fontFamily:T.display, outline:'none' }}/>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'0 14px' }}>
+          {muscles.length===0&&search&&(
+            <div style={{ textAlign:'center', padding:'20px', color:T.ink2, fontSize:13 }}>Nessun risultato. Usa l'aggiunta personalizzata sotto.</div>
+          )}
+          {muscles.map(m=>(
+            <div key={m}>
+              <ML T={T} size={9} style={{ display:'block', marginTop:14, marginBottom:6 }}>{m.toUpperCase()}</ML>
+              {filtered.filter(e=>e.muscle===m).map(ex=>(
+                <button key={ex.name} onClick={()=>onAdd(ex)} style={{ width:'100%', padding:'11px 14px', borderRadius:10, border:`1px solid ${T.rule}`, background:T.bg, color:T.ink, cursor:'pointer', textAlign:'left', display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6, fontFamily:T.display, fontSize:14, fontWeight:600 }}>
+                  <span>{ex.name}</span>
+                  <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                    {ex.bw&&<ML T={T} size={8} c={T.ink2}>BW</ML>}
+                    {I.plus(T.hi,14)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ))}
+
+          {/* custom exercise */}
+          <div style={{ margin:'16px 0 20px', padding:'14px', background:T.bg, borderRadius:12 }}>
+            <ML T={T} size={9} style={{ display:'block', marginBottom:8 }}>ESERCIZIO PERSONALIZZATO</ML>
+            <div style={{ display:'flex', gap:8 }}>
+              <input value={custom} onChange={e=>setCustom(e.target.value)} placeholder="Es. Sissy squat..."
+                style={{ flex:1, padding:'10px 12px', background:T.card, border:`1px solid ${T.rule}`, borderRadius:8, color:T.ink, fontSize:14, fontFamily:T.display, outline:'none' }}/>
+              <button onClick={()=>{ if(custom.trim()){ onAdd({name:custom.trim(),bw:false}); setCustom(''); } }}
+                style={{ padding:'10px 18px', background:T.hi, borderRadius:8, border:'none', color:T.hiInk, fontFamily:T.display, fontWeight:700, fontSize:13, cursor:'pointer' }}>
+                Aggiungi
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────
 function App() {
   const [state, update] = useAppState();
   const [tab, setTab] = React.useState('home');
-  const [workout, setWorkout] = React.useState(null); // { sessionId, kind } | null
+  const [workout, setWorkout] = React.useState(null);   // { sessionId, kind } | null
+  const [editProgKey, setEditProgKey] = React.useState(null); // 'push'|'pull'|'legs'|'fullbody'|null
 
   const T = mkTheme(state.prefs?.mode||'dark', state.prefs?.accent||'#c5f24a');
+  const programs = state.programs || TEMPLATES;
 
   if (!state.setup) return <Onboarding state={state} update={update}/>;
 
@@ -1484,8 +1699,7 @@ function App() {
       setWorkout({ sessionId:existingId, kind });
       return;
     }
-    // create new session
-    const tmpl = TEMPLATES[kind];
+    const tmpl = programs[kind] || TEMPLATES[kind];
     if (!tmpl) return;
     const id = uid();
     const session = {
@@ -1506,26 +1720,39 @@ function App() {
 
   return (
     <AppFrame T={T}>
+      {/* Tab screens (always rendered, one at a time) */}
+      {tab==='home'&&<HomeScreen state={state} update={update} T={T} onStartWorkout={startWorkout}/>}
+      {tab==='cal'&&<CalendarScreen state={state} update={update} T={T} onStartWorkout={startWorkout} onEditProgram={k=>{setEditProgKey(k);}}/>}
+      {tab==='stats'&&<StatsScreen state={state} T={T}/>}
+      {tab==='me'&&<ProfileScreen state={state} update={update} T={T}/>}
+
+      {/* Tab bar — always visible */}
+      <TabBar active={tab} onChange={setTab} T={T}/>
+
+      {/* Workout overlay */}
       {workout&&(
-        <WorkoutScreen
-          sessionId={workout.sessionId}
-          kind={workout.kind}
-          sessions={state.sessions}
+        <div style={{ position:'absolute', inset:0, zIndex:100, background:T.bg, display:'flex', flexDirection:'column' }} className="slide-up">
+          <WorkoutScreen
+            sessionId={workout.sessionId}
+            kind={workout.kind}
+            sessions={state.sessions}
+            update={update}
+            T={T}
+            programs={programs}
+            onClose={closeWorkout}
+          />
+        </div>
+      )}
+
+      {/* Program editor overlay */}
+      {editProgKey&&(
+        <ProgramEditorScreen
+          progKey={editProgKey}
+          programs={programs}
           update={update}
           T={T}
-          onClose={closeWorkout}
+          onClose={()=>setEditProgKey(null)}
         />
-      )}
-      {!workout&&(
-        <>
-          <Scr T={T} style={{ flex:'none', height:'none', display:'contents' }}>
-            {tab==='home'&&<HomeScreen state={state} update={update} T={T} onStartWorkout={startWorkout}/>}
-            {tab==='cal'&&<CalendarScreen state={state} update={update} T={T} onStartWorkout={startWorkout}/>}
-            {tab==='stats'&&<StatsScreen state={state} T={T}/>}
-            {tab==='me'&&<ProfileScreen state={state} update={update} T={T}/>}
-          </Scr>
-          <TabBar active={tab} onChange={setTab} T={T}/>
-        </>
       )}
     </AppFrame>
   );
