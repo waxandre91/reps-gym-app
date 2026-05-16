@@ -189,6 +189,7 @@ function blank() {
     programs: JSON.parse(JSON.stringify(TEMPLATES)),
     sessions: [],
     activeSessionId: null,
+    lastBackup: null,
   };
 }
 function useAppState() {
@@ -196,6 +197,7 @@ function useAppState() {
     const loaded = loadS();
     if (!loaded) return blank();
     if (!loaded.programs) loaded.programs = JSON.parse(JSON.stringify(TEMPLATES));
+    if (!('lastBackup' in loaded)) loaded.lastBackup = null;
     return loaded;
   });
   React.useEffect(() => { saveS(s); }, [s]);
@@ -293,6 +295,62 @@ const I = {
   trophy:(c,s=20)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M8 21h8M12 17v4M7 4H4a1 1 0 0 0-1 1v2c0 3 2 5 5 6M17 4h3a1 1 0 0 1 1 1v2c0 3-2 5-5 6"/><path d="M7 4h10v7a5 5 0 0 1-10 0z"/></svg>,
   skip:  (c,s=18)=><svg viewBox="0 0 24 24" width={s} height={s} fill={c}><path d="M5 4l10 8-10 8V4z"/><rect x="19" y="4" width="2" height="16"/></svg>,
 };
+
+// ─── BACKUP ───────────────────────────────────────────────────────────
+const SNOOZE_KEY = 'reps_backup_snooze';
+
+function needsBackup(lastBackup) {
+  const snooze = localStorage.getItem(SNOOZE_KEY);
+  if (snooze && Date.now() < Number(snooze)) return false;
+  if (!lastBackup) return true;
+  return Date.now() - new Date(lastBackup).getTime() > 7 * 24 * 3600 * 1000;
+}
+
+function doBackup(state, update) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  const filename = `reps-backup-${stamp}.json`;
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  update(s => ({ ...s, lastBackup: now.toISOString() }));
+  localStorage.removeItem(SNOOZE_KEY);
+}
+
+function BackupBanner({ state, update, T }) {
+  const [visible, setVisible] = React.useState(() => needsBackup(state.lastBackup));
+  if (!visible) return null;
+  const snooze = () => {
+    localStorage.setItem(SNOOZE_KEY, String(Date.now() + 24*3600*1000));
+    setVisible(false);
+  };
+  const backup = () => {
+    doBackup(state, update);
+    setVisible(false);
+  };
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:T.card2, borderTop:`1px solid ${T.rule}`, flexShrink:0 }}>
+      <div style={{ flex:1, display:'flex', alignItems:'center', gap:6 }}>
+        <span style={{ fontSize:14 }}>💾</span>
+        <div>
+          <div style={{ fontFamily:T.display, fontSize:12, fontWeight:700, color:T.ink }}>Backup settimanale disponibile</div>
+          <div style={{ fontFamily:T.mono, fontSize:9, color:T.ink2, letterSpacing:.5 }}>
+            {state.lastBackup ? `Ultimo: ${new Date(state.lastBackup).toLocaleDateString('it-IT')}` : 'Nessun backup effettuato'}
+          </div>
+        </div>
+      </div>
+      <button onClick={backup} style={{ padding:'6px 14px', borderRadius:100, background:T.hi, border:'none', color:T.hiInk, fontFamily:T.display, fontWeight:700, fontSize:11, cursor:'pointer', flexShrink:0 }}>
+        Scarica →
+      </button>
+      <button onClick={snooze} style={{ width:24, height:24, borderRadius:100, background:'transparent', border:'none', color:T.ink2, fontSize:16, cursor:'pointer', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        ×
+      </button>
+    </div>
+  );
+}
 
 // ─── BASE UI ──────────────────────────────────────────────────────────
 function AppFrame({ children, T }) {
@@ -1427,13 +1485,33 @@ function ProfileScreen({ state, update, T }) {
     setEditing(false);
   };
 
-  const exportData = () => {
-    const data = JSON.stringify(state, null, 2);
-    const blob = new Blob([data], { type:'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href=url; a.download='reps-export.json'; a.click();
-    URL.revokeObjectURL(url);
+  const exportData = () => doBackup(state, update);
+
+  const importData = () => {
+    const inp = document.createElement('input');
+    inp.type='file'; inp.accept='.json';
+    inp.onchange = e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
+          if (!parsed.profile || !parsed.sessions) {
+            alert('File non valido. Assicurati di usare un backup REPS.');
+            return;
+          }
+          if (confirm(`Ripristinare i dati dal backup del ${new Date(parsed.lastBackup||parsed.sessions?.[0]?.date||Date.now()).toLocaleDateString('it-IT')}?\n\nI dati attuali verranno sostituiti.`)) {
+            update(() => ({ ...parsed, lastBackup: parsed.lastBackup||null }));
+            alert('Dati ripristinati con successo! ✓');
+          }
+        } catch {
+          alert('Errore nella lettura del file. Assicurati che sia un JSON valido.');
+        }
+      };
+      reader.readAsText(file);
+    };
+    inp.click();
   };
 
   const resetApp = () => {
@@ -1521,16 +1599,42 @@ function ProfileScreen({ state, update, T }) {
         </Card>
       </div>
 
+      {/* Backup */}
+      <div style={{ margin:'12px 14px 0' }}>
+        <Card T={T} pad="14px">
+          <ML T={T} size={9} c={T.hi}>BACKUP</ML>
+          {/* last backup info */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:10, padding:'10px 12px', background:T.bg, borderRadius:10 }}>
+            <div>
+              <ML T={T} size={9} ls={1}>ULTIMO BACKUP</ML>
+              <div style={{ fontFamily:T.display, fontSize:14, fontWeight:600, marginTop:2 }}>
+                {state.lastBackup ? new Date(state.lastBackup).toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'}) : '—'}
+              </div>
+            </div>
+            <div style={{ width:10, height:10, borderRadius:10, background: state.lastBackup && Date.now()-new Date(state.lastBackup).getTime()<7*24*3600*1000 ? T.hi : T.red, boxShadow:`0 0 8px ${state.lastBackup && Date.now()-new Date(state.lastBackup).getTime()<7*24*3600*1000 ? T.hi+'88' : T.red+'88'}` }}/>
+          </div>
+          <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:8 }}>
+            <button onClick={exportData} style={{ padding:'12px 14px', borderRadius:10, background:T.hi, border:'none', color:T.hiInk, fontFamily:T.display, fontSize:14, fontWeight:700, cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <span>💾 Backup ora (JSON)</span>
+              {I.arr(T.hiInk,14)}
+            </button>
+            <button onClick={importData} style={{ padding:'12px 14px', borderRadius:10, background:T.bg, border:`1px solid ${T.rule}`, color:T.ink, fontFamily:T.display, fontSize:14, fontWeight:600, cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <span>📂 Ripristina da backup…</span>
+              {I.arr(T.ink2,14)}
+            </button>
+          </div>
+          <div style={{ marginTop:10, padding:'8px 10px', background:T.card2, borderRadius:8 }}>
+            <ML T={T} size={9} c={T.ink2}>Il file viene salvato nella cartella Download del dispositivo. Importalo qui per ripristinare i dati anche dopo aver cancellato il browser.</ML>
+          </div>
+        </Card>
+      </div>
+
       {/* Data */}
       <div style={{ margin:'12px 14px 0' }}>
         <Card T={T} pad="14px">
           <ML T={T} size={9} c={T.hi}>DATI</ML>
-          <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
-            <button onClick={exportData} style={{ padding:'12px 14px', borderRadius:10, background:T.bg, border:`1px solid ${T.rule}`, color:T.ink, fontFamily:T.display, fontSize:14, fontWeight:600, cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <span>Esporta dati (JSON)</span>
-              {I.arr(T.ink2,14)}
-            </button>
-            <button onClick={resetApp} style={{ padding:'12px 14px', borderRadius:10, background:T.bg, border:`1px solid ${T.red}`, color:T.red, fontFamily:T.display, fontSize:14, fontWeight:600, cursor:'pointer', textAlign:'left' }}>
+          <div style={{ marginTop:12 }}>
+            <button onClick={resetApp} style={{ width:'100%', padding:'12px 14px', borderRadius:10, background:T.bg, border:`1px solid ${T.red}`, color:T.red, fontFamily:T.display, fontSize:14, fontWeight:600, cursor:'pointer', textAlign:'left' }}>
               Elimina tutti i dati
             </button>
           </div>
@@ -1725,6 +1829,9 @@ function App() {
       {tab==='cal'&&<CalendarScreen state={state} update={update} T={T} onStartWorkout={startWorkout} onEditProgram={k=>{setEditProgKey(k);}}/>}
       {tab==='stats'&&<StatsScreen state={state} T={T}/>}
       {tab==='me'&&<ProfileScreen state={state} update={update} T={T}/>}
+
+      {/* Backup banner — shown above tab bar when due */}
+      <BackupBanner state={state} update={update} T={T}/>
 
       {/* Tab bar — always visible */}
       <TabBar active={tab} onChange={setTab} T={T}/>
