@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0e0f0d" id="theme-meta" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="REPS" />
+<title>REPS · Gym Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; -webkit-text-size-adjust: 100%; }
+body { height: 100%; background: #0e0f0d; overflow: hidden; }
+#root { height: 100%; }
+input, button, textarea, select { font-family: inherit; -webkit-appearance: none; appearance: none; }
+textarea { resize: none; }
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; -ms-overflow-style: none; }
+@keyframes slideUp   { from { transform: translateY(100%); opacity:0; } to { transform: translateY(0); opacity:1; } }
+@keyframes fadeIn    { from { opacity: 0; } to { opacity: 1; } }
+@keyframes popIn     { from { transform: scale(.92); opacity:0; } to { transform: scale(1); opacity:1; } }
+@keyframes countPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.5; } }
+@keyframes confettiFall {
+  0%   { transform: translateY(-10px) rotate(0deg) scale(1); opacity:1; }
+  100% { transform: translateY(110vh) rotate(540deg) scale(.5); opacity:0; }
+}
+.slide-up { animation: slideUp .32s cubic-bezier(.4,0,.2,1) both; }
+.fade-in  { animation: fadeIn .2s ease both; }
+.pop-in   { animation: popIn .24s cubic-bezier(.4,0,.2,1) both; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script type="text/babel" data-presets="react">
+// ─── CONSTANTS ────────────────────────────────────────────────────────
+const SK = 'reps_v2';
+
+const TEMPLATES = {
+  push: {
+    name: 'Push', sub: 'Petto · spalle · tricipiti',
+    exercises: [
+      { name:'Panca piana',          bw:false, targetSets:4, targetReps:8  },
+      { name:'Military press',       bw:false, targetSets:4, targetReps:8  },
+      { name:'Croci manubri',        bw:false, targetSets:3, targetReps:12 },
+      { name:'Alzate laterali',      bw:false, targetSets:3, targetReps:15 },
+      { name:'Push-down tricipiti',  bw:false, targetSets:3, targetReps:12 },
+      { name:'French press',         bw:false, targetSets:3, targetReps:10 },
+    ],
+  },
+  pull: {
+    name: 'Pull', sub: 'Schiena · bicipiti',
+    exercises: [
+      { name:'Trazioni',             bw:true,  targetSets:4, targetReps:8  },
+      { name:'Rematore bilanciere',  bw:false, targetSets:4, targetReps:8  },
+      { name:'Lat machine',          bw:false, targetSets:3, targetReps:10 },
+      { name:'Curl bilanciere',      bw:false, targetSets:3, targetReps:10 },
+      { name:'Curl martello',        bw:false, targetSets:3, targetReps:12 },
+    ],
+  },
+  legs: {
+    name: 'Legs', sub: 'Quad · glutei · femorali',
+    exercises: [
+      { name:'Squat bilanciere',     bw:false, targetSets:4, targetReps:6  },
+      { name:'Stacco rumeno',        bw:false, targetSets:4, targetReps:8  },
+      { name:'Affondi',              bw:true,  targetSets:3, targetReps:10 },
+      { name:'Leg press',            bw:false, targetSets:3, targetReps:12 },
+      { name:'Leg curl',             bw:false, targetSets:3, targetReps:12 },
+      { name:'Calf raise',           bw:false, targetSets:4, targetReps:15 },
+    ],
+  },
+  fullbody: {
+    name: 'Full body', sub: 'Allenamento completo',
+    exercises: [
+      { name:'Squat bilanciere',     bw:false, targetSets:3, targetReps:8  },
+      { name:'Panca piana',          bw:false, targetSets:3, targetReps:8  },
+      { name:'Rematore bilanciere',  bw:false, targetSets:3, targetReps:8  },
+      { name:'Military press',       bw:false, targetSets:3, targetReps:10 },
+      { name:'Plank',                bw:true,  targetSets:3, targetReps:45 },
+    ],
+  },
+};
+
+const WARMUP = {
+  push:  ['Rotazioni spalle 30s','Band pull-apart ×15','Push-up scapolari ×10','Arm circle 30s','Cat-cow ×8'],
+  pull:  ['Rotazioni spalle 30s','Facepull leggero ×15','Mobilità toracica ×8','Hanging scapular ×5','Cat-cow ×8'],
+  legs:  ['Hip circle 30s','Squat corpo libero ×15','Affondi laterali ×10','Glute bridge ×15','Cat-cow ×8'],
+  total: ['Cat-cow ×8','Hip circle 30s','Rotazioni spalle 30s','Bird-dog ×10','Plank 30s','Squat corpo libero ×10'],
+};
+
+const DEF_SCHEDULE = { 0:null, 1:'push', 2:'pull', 3:null, 4:'legs', 5:null, 6:'push' };
+
+const ACHIEVEMENTS = [
+  { id:'first',     icon:'🏋️', label:'Prima sessione',   desc:'Hai completato il tuo primo allenamento!' },
+  { id:'streak5',   icon:'🔥', label:'Streak 5 giorni',  desc:'5 giorni consecutivi di allenamento.'    },
+  { id:'streak10',  icon:'🔥', label:'Streak 10 giorni', desc:'10 giorni consecutivi!'                 },
+  { id:'vol100',    icon:'⚡', label:'100 000 kg',        desc:'Volume totale superato!'                },
+  { id:'sets100',   icon:'💪', label:'100 serie',         desc:'100 serie completate.'                  },
+  { id:'sets500',   icon:'💎', label:'500 serie',         desc:'500 serie completate.'                  },
+  { id:'pr_bench',  icon:'🥇', label:'PR Panca',          desc:'Nuovo record personale alla panca!'     },
+  { id:'pr_squat',  icon:'🥇', label:'PR Squat',          desc:'Nuovo record personale allo squat!'     },
+];
+
+// ─── THEME ────────────────────────────────────────────────────────────
+function mkTheme(mode='dark', accent='#c5f24a') {
+  const dark = mode === 'dark';
+  const accInk = { '#c5f24a':'#0a0c08', '#ff7a3d':'#1a0902', '#5fb8ff':'#02111a' }[accent] || '#0a0c08';
+  return {
+    mode, accent,
+    bg:    dark?'#0e0f0d':'#f3f5ee',
+    card:  dark?'#1a1c19':'#ffffff',
+    card2: dark?'#23261f':'#e7ebde',
+    ink:   dark?'#f3f4ef':'#16180f',
+    ink2:  dark?'#7e837a':'#5d6155',
+    rule:  dark?'#26291f':'#dee2d2',
+    hi: accent, hiInk: accInk,
+    glow: accent+'55',
+    red: '#e6553f', blue: '#6cb8ff', gold: '#e8b03d',
+    mono:    "'JetBrains Mono', ui-monospace, monospace",
+    display: "'Space Grotesk', system-ui, sans-serif",
+    body:    "'Manrope', system-ui, sans-serif",
+  };
+}
+
+// ─── STATE ────────────────────────────────────────────────────────────
+function loadS() { try { return JSON.parse(localStorage.getItem(SK)); } catch { return null; } }
+function saveS(s) { try { localStorage.setItem(SK, JSON.stringify(s)); } catch {} }
+function blank() {
+  return {
+    setup: false,
+    profile: { name:'', sex:'M', age:28, weight:75, height:178, goal:'mass' },
+    prefs: { mode:'dark', accent:'#c5f24a' },
+    schedule: { ...DEF_SCHEDULE },
+    sessions: [],
+    activeSessionId: null,
+  };
+}
+function useAppState() {
+  const [s, setS] = React.useState(() => loadS() || blank());
+  React.useEffect(() => { saveS(s); }, [s]);
+  const upd = React.useCallback((fn) => {
+    setS(p => typeof fn === 'function' ? fn(p) : { ...p, ...fn });
+  }, []);
+  return [s, upd];
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function isoDate(s) { return new Date(s+'T00:00:00'); }
+function dayName(d) { return ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'][d.getDay()]; }
+function monthName(m) { return ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'][m]; }
+function fmtDateShort(d) {
+  const dt = typeof d==='string'?isoDate(d):d;
+  return `${['Dom','Lun','Mar','Mer','Gio','Ven','Sab'][dt.getDay()]} ${dt.getDate()} ${['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'][dt.getMonth()]}`;
+}
+function fmtElapsed(ms) {
+  const s=Math.floor(ms/1000), m=Math.floor(s/60), h=Math.floor(m/60);
+  return h>0?`${h}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`:`${m}:${String(s%60).padStart(2,'0')}`;
+}
+function sessVolume(sess) {
+  return (sess?.exercises||[]).reduce((t,ex)=>
+    t+(ex.sets||[]).reduce((s,set)=>s+(set.done&&set.kg>0?set.reps*set.kg:0),0),0);
+}
+function sessDone(sess) {
+  return (sess?.exercises||[]).reduce((s,ex)=>s+(ex.sets||[]).filter(x=>x.done).length,0);
+}
+function sessTotal(sess) {
+  return (sess?.exercises||[]).reduce((s,ex)=>s+(ex.sets||[]).length,0);
+}
+function calcStreak(sessions) {
+  const done = new Set(sessions.filter(s=>s.completedAt).map(s=>s.date));
+  let streak=0, d=new Date();
+  while(done.has(d.toISOString().slice(0,10))) { streak++; d.setDate(d.getDate()-1); }
+  return streak;
+}
+function calcTotalVolume(sessions) {
+  return sessions.reduce((t,s)=>t+sessVolume(s),0);
+}
+function calcTotalSets(sessions) {
+  return sessions.filter(s=>s.completedAt).reduce((t,s)=>t+sessDone(s),0);
+}
+function calcPRs(sessions) {
+  const prs = {};
+  for (const sess of sessions) {
+    for (const ex of (sess.exercises||[])) {
+      for (const set of (ex.sets||[])) {
+        if (!set.done||!set.kg||!set.reps) continue;
+        const e1rm = set.kg*(1+set.reps/30);
+        if (!prs[ex.name]||e1rm>prs[ex.name].e1rm) {
+          prs[ex.name] = { kg:set.kg, reps:set.reps, e1rm, date:sess.date };
+        }
+      }
+    }
+  }
+  return prs;
+}
+function checkAchievements(sessions) {
+  const unlock = new Set();
+  const streak = calcStreak(sessions);
+  const vol = calcTotalVolume(sessions);
+  const sets = calcTotalSets(sessions);
+  const prs = calcPRs(sessions);
+  if (sessions.some(s=>s.completedAt)) unlock.add('first');
+  if (streak>=5) unlock.add('streak5');
+  if (streak>=10) unlock.add('streak10');
+  if (vol>=100000) unlock.add('vol100');
+  if (sets>=100) unlock.add('sets100');
+  if (sets>=500) unlock.add('sets500');
+  if (prs['Panca piana']) unlock.add('pr_bench');
+  if (prs['Squat bilanciere']) unlock.add('pr_squat');
+  return unlock;
+}
+
+// ─── ICONS ────────────────────────────────────────────────────────────
+const I = {
+  home:  (c,s=22)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11L12 3l9 8"/><path d="M5 10v10h5v-5h4v5h5V10"/></svg>,
+  cal:   (c,s=22)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>,
+  chart: (c,s=22)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M6 17V9m6 8V5m6 12v-6"/></svg>,
+  user:  (c,s=22)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>,
+  flame: (c,s=20)=><svg viewBox="0 0 24 24" width={s} height={s} fill={c}><path d="M12 2c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-2-5 1-9z"/></svg>,
+  arr:   (c,s=18)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>,
+  back:  (c,s=18)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>,
+  plus:  (c,s=18)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>,
+  minus: (c,s=18)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>,
+  check: (c,s=18)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>,
+  clock: (c,s=16)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>,
+  close: (c,s=18)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><path d="M5 5L19 19M19 5L5 19"/></svg>,
+  play:  (c,s=20)=><svg viewBox="0 0 24 24" width={s} height={s} fill={c}><path d="M5 3L19 12 5 21z"/></svg>,
+  edit:  (c,s=16)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg>,
+  dumbbell:(c,s=20)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h2M20 12h2M5 8v8M19 8v8M8 6v12M16 6v12M8 12h8"/></svg>,
+  trophy:(c,s=20)=><svg viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M8 21h8M12 17v4M7 4H4a1 1 0 0 0-1 1v2c0 3 2 5 5 6M17 4h3a1 1 0 0 1 1 1v2c0 3-2 5-5 6"/><path d="M7 4h10v7a5 5 0 0 1-10 0z"/></svg>,
+  skip:  (c,s=18)=><svg viewBox="0 0 24 24" width={s} height={s} fill={c}><path d="M5 4l10 8-10 8V4z"/><rect x="19" y="4" width="2" height="16"/></svg>,
+};
+
+// ─── BASE UI ──────────────────────────────────────────────────────────
+function AppFrame({ children, T }) {
+  React.useEffect(()=>{
+    document.getElementById('theme-meta')?.setAttribute('content', T.bg);
+    document.body.style.background = T.bg;
+  }, [T.bg]);
+  return (
+    <div style={{ minHeight:'100dvh', background:T.bg, color:T.ink, fontFamily:T.body, display:'flex', justifyContent:'center' }}>
+      <div style={{ width:'100%', maxWidth:430, minHeight:'100dvh', display:'flex', flexDirection:'column', background:T.bg, boxShadow:'0 0 80px rgba(0,0,0,.5)', position:'relative' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function TabBar({ active, onChange, T }) {
+  const tabs = [{k:'home',l:'Home',i:I.home},{k:'cal',l:'Piano',i:I.cal},{k:'stats',l:'Stats',i:I.chart},{k:'me',l:'Tu',i:I.user}];
+  return (
+    <div style={{ display:'flex', justifyContent:'space-around', alignItems:'center', padding:'8px 0 calc(6px + env(safe-area-inset-bottom))', borderTop:`1px solid ${T.rule}`, background:T.bg, flexShrink:0, zIndex:20 }}>
+      {tabs.map(t=>{
+        const on=t.k===active;
+        return (
+          <div key={t.k} onClick={()=>onChange(t.k)} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, color:on?T.hi:T.ink2, padding:'4px 14px', cursor:'pointer', userSelect:'none', WebkitTapHighlightColor:'transparent' }}>
+            {t.i(on?T.hi:T.ink2,22)}
+            <span style={{ fontSize:10, fontWeight:600, letterSpacing:.5, textTransform:'uppercase', fontFamily:T.mono }}>{t.l}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Scr({ children, T, style={} }) {
+  return (
+    <div style={{ flex:1, overflowY:'auto', overflowX:'hidden', WebkitOverflowScrolling:'touch', paddingTop:'env(safe-area-inset-top)', ...style }}>
+      {children}
+    </div>
+  );
+}
+
+const ML = ({children,c,size=10,ls=1.5,T,style={}})=>(
+  <span style={{ fontFamily:T?.mono||'monospace', fontSize:size, letterSpacing:ls, color:c||(T?.ink2||'#888'), textTransform:'uppercase', ...style }}>{children}</span>
+);
+
+const DL = ({children,size=24,weight=700,color,T,style={}})=>(
+  <div style={{ fontFamily:T?.display||'sans-serif', fontSize:size, fontWeight:weight, color:color||(T?.ink||'#fff'), letterSpacing:-.5, lineHeight:1.05, ...style }}>{children}</div>
+);
+
+function Card({ children, T, accent=false, pad='14px 16px', style={} }) {
+  return <div style={{ background:T.card, borderRadius:14, border:accent?`1px solid ${T.hi}`:'none', padding:pad, ...style }}>{children}</div>;
+}
+
+function PBtn({ children, onClick, T, style={} }) {
+  return (
+    <button onClick={onClick} style={{ background:T.hi, color:T.hiInk, padding:'14px 18px', borderRadius:100, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:T.display, fontWeight:800, fontSize:14, letterSpacing:.5, width:'100%', WebkitTapHighlightColor:'transparent', ...style }}>
+      {children}
+    </button>
+  );
+}
+
+function GBtn({ children, onClick, T, style={} }) {
+  return (
+    <button onClick={onClick} style={{ background:'transparent', color:T.ink, padding:'12px 18px', borderRadius:100, border:`1px solid ${T.rule}`, cursor:'pointer', fontFamily:T.mono, fontSize:11, letterSpacing:1, textTransform:'uppercase', width:'100%', WebkitTapHighlightColor:'transparent', ...style }}>
+      {children}
+    </button>
+  );
+}
+
+function Stepper({ value, onChange, step=1, min=0, max=999, T }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+      <button onClick={()=>onChange(Math.max(min,+(value-step).toFixed(2)))} style={{ width:36, height:36, borderRadius:10, background:T.card2, border:'none', color:T.ink, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+        {I.minus(T.ink,14)}
+      </button>
+      <div style={{ minWidth:64, textAlign:'center', fontFamily:T.mono, fontSize:18, color:T.ink, fontWeight:600 }}>{value}</div>
+      <button onClick={()=>onChange(Math.min(max,+(value+step).toFixed(2)))} style={{ width:36, height:36, borderRadius:10, background:T.hi, border:'none', color:T.hiInk, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+        {I.plus(T.hiInk,14)}
+      </button>
+    </div>
+  );
+}
+
+// ─── ONBOARDING ───────────────────────────────────────────────────────
+function Onboarding({ state, update }) {
+  const [step, setStep] = React.useState(0);
+  const [draft, setDraft] = React.useState({ ...state.profile });
+  const T = mkTheme('dark', '#c5f24a');
+  const STEPS = 5;
+  const bmi = (() => { const h=draft.height/100; return h?(draft.weight/(h*h)).toFixed(1):0; })();
+  const bmiLabel = bmi<18.5?'sottopeso':bmi<25?'normopeso':bmi<30?'sovrappeso':'obeso';
+
+  const next = () => {
+    if (step < STEPS-1) setStep(s=>s+1);
+    else update(s=>({ ...s, profile:draft, setup:true }));
+  };
+  const back = () => step>0&&setStep(s=>s-1);
+
+  return (
+    <AppFrame T={T}>
+      <Scr T={T} style={{ paddingBottom:0 }}>
+        <div style={{ padding:'14px 16px 0', display:'flex', gap:5 }}>
+          {Array.from({length:STEPS}).map((_,i)=>(
+            <div key={i} style={{ flex:1, height:3, borderRadius:2, background:i<=step?T.hi:T.rule }}/>
+          ))}
+        </div>
+        <div style={{ padding:'10px 22px 6px', display:'flex', justifyContent:'space-between' }}>
+          <ML T={T}>{String(step+1).padStart(2,'0')} / 0{STEPS}</ML>
+          {step>0&&<ML T={T} c={T.hi} style={{ cursor:'pointer' }} onClick={next}>SALTA →</ML>}
+        </div>
+        {step===0&&<OnbWelcome draft={draft} setDraft={setDraft} T={T}/>}
+        {step===1&&<OnbSex draft={draft} setDraft={setDraft} T={T}/>}
+        {step===2&&<OnbAge draft={draft} setDraft={setDraft} T={T}/>}
+        {step===3&&<OnbBody draft={draft} setDraft={setDraft} bmi={bmi} bmiLabel={bmiLabel} T={T}/>}
+        {step===4&&<OnbGoal draft={draft} setDraft={setDraft} T={T}/>}
+      </Scr>
+      <div style={{ padding:'12px 14px calc(14px + env(safe-area-inset-bottom))', display:'flex', gap:8, background:T.bg, borderTop:`1px solid ${T.rule}`, flexShrink:0 }}>
+        {step>0&&<GBtn onClick={back} T={T} style={{ width:'auto', padding:'12px 18px' }}>← Indietro</GBtn>}
+        <PBtn onClick={next} T={T} style={{ flex:1 }}>
+          {step===STEPS-1?'INIZIA AD ALLENARTI':'CONTINUA'}{I.arr(T.hiInk,14)}
+        </PBtn>
+      </div>
+    </AppFrame>
+  );
+}
+
+function OnbWelcome({ draft, setDraft, T }) {
+  return (
+    <div style={{ padding:'30px 22px 0' }} className="fade-in">
+      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+        <div style={{ width:9, height:9, borderRadius:9, background:T.hi, boxShadow:`0 0 12px ${T.glow}` }}/>
+        <ML T={T} c={T.hi} ls={3}>REPS</ML>
+      </div>
+      <DL T={T} size={38} style={{ marginTop:28, letterSpacing:-1.5 }}>Train.<br/>Track.<br/><span style={{ color:T.hi }}>Repeat.</span></DL>
+      <div style={{ fontSize:14, color:T.ink2, marginTop:14, lineHeight:1.6 }}>Costruisci la tua scheda, registra ogni serie, vedi i progressi nel tempo.</div>
+      <div style={{ marginTop:28 }}>
+        <ML T={T} ls={1}>Come vuoi chiamarti</ML>
+        <input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="es. Marco"
+          style={{ width:'100%', padding:'14px 16px', marginTop:8, fontFamily:T.display, fontSize:22, fontWeight:700, color:T.ink, background:T.card, border:`1px solid ${T.rule}`, borderRadius:14, outline:'none', letterSpacing:-.5 }}/>
+      </div>
+    </div>
+  );
+}
+
+function OnbSex({ draft, setDraft, T }) {
+  return (
+    <div style={{ padding:'24px 22px 0' }} className="fade-in">
+      <DL T={T} size={26}>Sesso</DL>
+      <div style={{ fontSize:13, color:T.ink2, marginTop:6 }}>Per stimare fabbisogno calorico e carichi di riferimento.</div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:24 }}>
+        {[{k:'M',label:'Uomo'},{k:'F',label:'Donna'}].map(o=>{
+          const on=draft.sex===o.k;
+          return (
+            <button key={o.k} onClick={()=>setDraft({...draft,sex:o.k})} style={{ padding:'30px 14px', borderRadius:16, textAlign:'center', cursor:'pointer', background:on?T.card:'transparent', border:`1px solid ${on?T.hi:T.rule}`, boxShadow:on?`inset 0 0 0 1px ${T.hi}`:'none', color:T.ink }}>
+              <DL T={T} size={52} color={on?T.hi:T.ink2} style={{ letterSpacing:-2 }}>{o.k}</DL>
+              <ML T={T} ls={1}>{o.label.toUpperCase()}</ML>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OnbAge({ draft, setDraft, T }) {
+  const hrMax = 220-draft.age;
+  return (
+    <div style={{ padding:'24px 22px 0' }} className="fade-in">
+      <DL T={T} size={26}>Età</DL>
+      <div style={{ fontSize:13, color:T.ink2, marginTop:6 }}>Per calcolare la frequenza cardiaca massima.</div>
+      <div style={{ marginTop:28, textAlign:'center' }}>
+        <DL T={T} size={96} color={T.hi} style={{ letterSpacing:-4, lineHeight:1 }}>{draft.age}</DL>
+        <ML T={T} ls={1.5} style={{ marginTop:6, display:'block' }}>HR MAX ≈ {hrMax} BPM</ML>
+      </div>
+      <div style={{ marginTop:20, display:'flex', justifyContent:'center' }}>
+        <Stepper value={draft.age} onChange={v=>setDraft({...draft,age:v})} min={14} max={99} T={T}/>
+      </div>
+      <div style={{ display:'flex', gap:6, marginTop:18, justifyContent:'center', flexWrap:'wrap' }}>
+        {[18,25,30,40,50,60].map(a=>(
+          <button key={a} onClick={()=>setDraft({...draft,age:a})} style={{ padding:'6px 14px', borderRadius:100, background:a===draft.age?T.hi:T.card, color:a===draft.age?T.hiInk:T.ink2, border:'none', cursor:'pointer', fontFamily:T.mono, fontSize:11 }}>{a}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OnbBody({ draft, setDraft, bmi, bmiLabel, T }) {
+  return (
+    <div style={{ padding:'24px 22px 0' }} className="fade-in">
+      <DL T={T} size={26}>Corpo</DL>
+      <div style={{ fontSize:13, color:T.ink2, marginTop:6 }}>Per calcolare BMI e tracciare i progressi.</div>
+      {[{k:'PESO',val:draft.weight,set:v=>setDraft({...draft,weight:v}),unit:'kg',min:30,max:200,step:.5,accent:true},{k:'ALTEZZA',val:draft.height,set:v=>setDraft({...draft,height:v}),unit:'cm',min:120,max:230,step:1}].map(f=>(
+        <div key={f.k} style={{ marginTop:14, padding:'14px 16px', borderRadius:14, background:T.card, border:`1px solid ${f.accent?T.hi:T.rule}`, display:'flex', alignItems:'center', justifyContent:'space-between', gap:14 }}>
+          <div>
+            <ML T={T} ls={1.5}>{f.k}</ML>
+            <div style={{ display:'flex', alignItems:'baseline', gap:6, marginTop:4 }}>
+              <DL T={T} size={42} color={f.accent?T.hi:T.ink} style={{ letterSpacing:-1.5, lineHeight:1 }}>{f.val}</DL>
+              <ML T={T} size={13}>{f.unit}</ML>
+            </div>
+          </div>
+          <Stepper value={f.val} onChange={f.set} min={f.min} max={f.max} step={f.step} T={T}/>
+        </div>
+      ))}
+      <div style={{ marginTop:14, padding:'12px 14px', background:T.card2, borderRadius:12, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div>
+          <ML T={T} ls={1}>BMI · calcolato</ML>
+          <DL T={T} size={18} style={{ marginTop:2 }}>{bmi} · {bmiLabel}</DL>
+        </div>
+        <BMIDial pct={Math.min(1,Math.max(.05,(bmi-18)/14))} T={T}/>
+      </div>
+    </div>
+  );
+}
+
+function BMIDial({ pct, T }) {
+  return (
+    <svg width="52" height="52" viewBox="0 0 52 52">
+      <circle cx="26" cy="26" r="20" fill="none" stroke={T.rule} strokeWidth="3"/>
+      <circle cx="26" cy="26" r="20" fill="none" stroke={T.hi} strokeWidth="3" strokeDasharray={`${pct*125.7} 125.7`} strokeLinecap="round" transform="rotate(-90 26 26)"/>
+    </svg>
+  );
+}
+
+function OnbGoal({ draft, setDraft, T }) {
+  const goals = [{k:'mass',label:'Massa muscolare',hint:'+0.4 kg / mese'},{k:'cut',label:'Dimagrire',hint:'−0.5 kg / settimana'},{k:'strong',label:'Forza',hint:'PR ogni 6 settimane'},{k:'tone',label:'Tonificare',hint:'composizione corporea'}];
+  return (
+    <div style={{ padding:'24px 22px 0' }} className="fade-in">
+      <DL T={T} size={26}>Obiettivo</DL>
+      <div style={{ fontSize:13, color:T.ink2, marginTop:6 }}>Adatteremo schede e suggerimenti.</div>
+      <div style={{ marginTop:18, display:'flex', flexDirection:'column', gap:8 }}>
+        {goals.map(g=>{
+          const on=g.k===draft.goal;
+          return (
+            <button key={g.k} onClick={()=>setDraft({...draft,goal:g.k})} style={{ padding:'14px 16px', borderRadius:12, textAlign:'left', cursor:'pointer', background:on?T.card:'transparent', border:`1px solid ${on?T.hi:T.rule}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <div style={{ fontFamily:T.display, fontSize:15, fontWeight:700, color:on?T.hi:T.ink }}>{g.label}</div>
+                <ML T={T} size={10} ls={1.2}>{g.hint}</ML>
+              </div>
+              <div style={{ width:20, height:20, borderRadius:100, border:`1.5px solid ${on?T.hi:T.rule}`, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {on&&<div style={{ width:9, height:9, borderRadius:9, background:T.hi }}/>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── HOME SCREEN ──────────────────────────────────────────────────────
+function HomeScreen({ state, update, T, onStartWorkout }) {
+  const profile = state.profile;
+  const kind = state.schedule[new Date().getDay()];
+  const tmpl = kind ? TEMPLATES[kind] : null;
+  const active = state.sessions.find(s=>s.id===state.activeSessionId);
+  const completedSessions = state.sessions.filter(s=>s.completedAt);
+  const streak = calcStreak(completedSessions);
+  const totalVol = calcTotalVolume(completedSessions);
+
+  // weekly volume bars (last 7 days)
+  const weekVols = React.useMemo(() => {
+    const today = new Date(), bars = [];
+    for (let i=6; i>=0; i--) {
+      const d = new Date(today); d.setDate(d.getDate()-i);
+      const ds = d.toISOString().slice(0,10);
+      const vol = completedSessions.filter(s=>s.date===ds).reduce((t,s)=>t+sessVolume(s),0);
+      bars.push({ day:['L','M','M','G','V','S','D'][(d.getDay()+6)%7], vol, isToday:i===0 });
+    }
+    const max = Math.max(...bars.map(b=>b.vol),1);
+    return bars.map(b=>({ ...b, pct:b.vol/max }));
+  }, [completedSessions]);
+
+  return (
+    <Scr T={T} style={{ paddingBottom:16 }}>
+      {/* header */}
+      <div style={{ padding:'16px 18px 4px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div>
+          <ML T={T}>WK {Math.ceil(new Date().getDate()/7)} · {dayName(new Date()).toUpperCase()}</ML>
+          <DL T={T} size={24} style={{ marginTop:5 }}>
+            {profile.name||'Atleta'}<span style={{ color:T.hi }}>.</span>
+          </DL>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          {streak>0&&(
+            <div style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 10px', background:T.card, borderRadius:8 }}>
+              {I.flame(T.hi,16)}
+              <span style={{ fontFamily:T.mono, fontSize:12, color:T.hi, fontWeight:600 }}>{streak}</span>
+            </div>
+          )}
+          <div style={{ width:34, height:34, borderRadius:8, background:T.card, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:T.mono, fontSize:13, color:T.ink, fontWeight:600 }}>
+            {(profile.name||'A')[0].toUpperCase()}
+          </div>
+        </div>
+      </div>
+
+      {/* active session banner */}
+      {active&&(
+        <div onClick={()=>onStartWorkout(active.kind,active.id)} style={{ margin:'10px 14px 0', padding:'12px 14px', background:T.hi, borderRadius:12, display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }}>
+          <div>
+            <ML T={T} c={T.hiInk} ls={1}>Allenamento in corso</ML>
+            <div style={{ fontFamily:T.display, fontSize:15, fontWeight:700, color:T.hiInk, marginTop:2 }}>
+              {TEMPLATES[active.kind]?.name||active.kind} · {sessDone(active)}/{sessTotal(active)} serie
+            </div>
+          </div>
+          {I.arr(T.hiInk,18)}
+        </div>
+      )}
+
+      {/* today's workout card */}
+      {!active&&(
+        <div style={{ margin:'12px 14px 0', borderRadius:16, background:T.card, padding:'16px 16px 14px', position:'relative', overflow:'hidden' }}>
+          <div style={{ position:'absolute', top:0, right:0, padding:'5px 12px', background:T.hi, color:T.hiInk, fontFamily:T.mono, fontSize:9, letterSpacing:1.5, borderBottomLeftRadius:12, fontWeight:700 }}>
+            {tmpl?`OGGI · ${tmpl.name.toUpperCase()}`:'OGGI · RIPOSO'}
+          </div>
+          {tmpl?(
+            <>
+              <ML T={T}>Scheda programmata</ML>
+              <DL T={T} size={26} style={{ marginTop:6 }}>{tmpl.name}</DL>
+              <div style={{ fontSize:12, color:T.ink2, marginTop:2 }}>{tmpl.sub}</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginTop:14 }}>
+                {[['EX',tmpl.exercises.length],['SERIE',tmpl.exercises.reduce((s,e)=>s+e.targetSets,0)],['MIN','~'+(tmpl.exercises.length*8)]].map(([k,v])=>(
+                  <div key={k} style={{ background:T.bg, borderRadius:10, padding:'8px 10px' }}>
+                    <ML T={T} size={9}>{ k}</ML>
+                    <div style={{ fontFamily:T.mono, fontSize:18, color:T.ink, marginTop:2 }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:14, paddingTop:12, borderTop:`1px solid ${T.rule}` }}>
+                <ML T={T}>↳ Tap per iniziare</ML>
+                <div onClick={()=>onStartWorkout(kind,null)} style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', background:T.hi, color:T.hiInk, borderRadius:100, cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+                  <span style={{ fontFamily:T.display, fontWeight:800, fontSize:13, letterSpacing:.5 }}>INIZIA</span>
+                  {I.arr(T.hiInk,14)}
+                </div>
+              </div>
+            </>
+          ):(
+            <>
+              <ML T={T}>Nessun allenamento oggi</ML>
+              <DL T={T} size={22} style={{ marginTop:6, color:T.ink2 }}>Giorno di riposo</DL>
+              <div style={{ marginTop:14, paddingTop:12, borderTop:`1px solid ${T.rule}` }}>
+                <div style={{ display:'flex', gap:8 }}>
+                  {Object.keys(TEMPLATES).map(k=>(
+                    <div key={k} onClick={()=>onStartWorkout(k,null)} style={{ flex:1, padding:'8px 4px', background:T.bg, borderRadius:8, textAlign:'center', cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+                      <div style={{ fontFamily:T.mono, fontSize:10, color:T.ink2 }}>{TEMPLATES[k].name}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* metrics */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, padding:'12px 14px 0' }}>
+        {[
+          ['PESO',`${profile.weight} kg`,'biometria'],
+          ['STREAK',`${streak}d`,streak>0?'🔥':'–'],
+          ['VOL TOTALE',totalVol>999?`${(totalVol/1000).toFixed(1)}t`:`${totalVol}kg`,'accum.'],
+          ['SESSION',completedSessions.length,`allenamenti`],
+        ].map(([k,v,d],i)=>(
+          <Card T={T} pad="10px 12px" key={i}>
+            <div style={{ display:'flex', justifyContent:'space-between' }}>
+              <ML T={T} size={9}>{k}</ML>
+              <ML T={T} size={9} c={T.ink2}>{d}</ML>
+            </div>
+            <div style={{ fontFamily:T.mono, fontSize:20, marginTop:4, color:T.ink }}>{v}</div>
+          </Card>
+        ))}
+      </div>
+
+      {/* weekly bar chart */}
+      <Card T={T} pad="12px 14px" style={{ margin:'10px 14px 0' }}>
+        <div style={{ display:'flex', justifyContent:'space-between' }}>
+          <ML T={T} size={9}>QUESTA SETTIMANA · VOLUME (kg)</ML>
+        </div>
+        <div style={{ display:'flex', alignItems:'flex-end', gap:5, height:50, marginTop:8 }}>
+          {weekVols.map((b,i)=>(
+            <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+              <div style={{ width:'100%', height:`${Math.max(4,b.pct*100)}%`, background:b.isToday?T.hi:b.vol>0?T.card2:T.rule, borderRadius:3, minHeight:b.vol>0?8:3 }}/>
+              <span style={{ fontFamily:T.mono, fontSize:8, color:b.isToday?T.hi:T.ink2 }}>{b.day}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </Scr>
+  );
+}
+
+// ─── WORKOUT SCREEN ───────────────────────────────────────────────────
+function WorkoutScreen({ sessionId, kind, sessions, update, T, onClose }) {
+  const [page, setPage] = React.useState('list'); // list | exercise | rest | complete | video | warmup
+  const [exIdx, setExIdx] = React.useState(0);
+  const [restSec, setRestSec] = React.useState(90);
+  const [restLeft, setRestLeft] = React.useState(90);
+  const timerRef = React.useRef(null);
+
+  const sess = sessions.find(s=>s.id===sessionId);
+  if (!sess) return null;
+
+  // ensure session has a valid id in state
+  const updateSess = (fn) => {
+    update(s=>({ ...s, sessions:s.sessions.map(ss=>ss.id===sessionId?fn(ss):ss) }));
+  };
+
+  // start rest timer
+  const startRest = (sec=90) => {
+    setRestSec(sec); setRestLeft(sec); setPage('rest');
+  };
+  React.useEffect(()=>{
+    if (page==='rest') {
+      timerRef.current = setInterval(()=>{
+        setRestLeft(l=>{ if(l<=1){ clearInterval(timerRef.current); setPage('exercise'); return 0; } return l-1; });
+      },1000);
+    } else { clearInterval(timerRef.current); }
+    return ()=>clearInterval(timerRef.current);
+  },[page]);
+
+  const completeWorkout = () => {
+    updateSess(s=>({ ...s, completedAt:new Date().toISOString() }));
+    update(s=>({ ...s, activeSessionId:null }));
+    setPage('complete');
+  };
+
+  const allDone = sess.exercises.every(ex=>(ex.sets||[]).every(set=>set.done));
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:T.bg, zIndex:50, display:'flex', flexDirection:'column', maxWidth:430, margin:'0 auto', left:0, right:0 }} className="slide-up">
+      {page==='list'&&<ExerciseList sess={sess} T={T} onSelect={i=>{setExIdx(i);setPage('exercise');}} onClose={()=>{update(s=>({...s,activeSessionId:null}));onClose();}} onComplete={completeWorkout} allDone={allDone} onWarmup={()=>setPage('warmup')}/>}
+      {page==='exercise'&&<ExerciseView sess={sess} exIdx={exIdx} updateSess={updateSess} T={T} onBack={()=>setPage('list')} onRest={startRest} onVideo={()=>setPage('video')} onNext={()=>{if(exIdx<sess.exercises.length-1){setExIdx(i=>i+1);}else setPage('list');}}/>}
+      {page==='rest'&&<RestTimer left={restLeft} total={restSec} T={T} onSkip={()=>{clearInterval(timerRef.current);setPage('exercise');}} onAdd={()=>setRestLeft(l=>l+15)}/>}
+      {page==='complete'&&<WorkoutComplete sess={sess} T={T} onClose={onClose}/>}
+      {page==='video'&&<VideoModal exName={sess.exercises[exIdx]?.name||''} T={T} onClose={()=>setPage('exercise')}/>}
+      {page==='warmup'&&<WarmupScreen kind={sess.kind} T={T} onClose={()=>setPage('list')}/>}
+    </div>
+  );
+}
+
+function ExerciseList({ sess, T, onSelect, onClose, onComplete, allDone, onWarmup }) {
+  const tmpl = TEMPLATES[sess.kind];
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
+      <div style={{ padding:'calc(env(safe-area-inset-top) + 12px) 16px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${T.rule}`, flexShrink:0 }}>
+        <div>
+          <ML T={T} c={T.hi}>{tmpl?.name||sess.kind}</ML>
+          <DL T={T} size={18} style={{ marginTop:3 }}>{tmpl?.sub||''}</DL>
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={onWarmup} style={{ padding:'6px 10px', borderRadius:8, background:T.card2, border:'none', color:T.ink2, fontFamily:T.mono, fontSize:10, cursor:'pointer' }}>WARM-UP</button>
+          <button onClick={onClose} style={{ width:32, height:32, borderRadius:8, background:T.card, border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>{I.close(T.ink,16)}</button>
+        </div>
+      </div>
+
+      <div style={{ flex:1, overflowY:'auto', padding:'10px 12px' }}>
+        {sess.exercises.map((ex,i)=>{
+          const done = (ex.sets||[]).filter(s=>s.done).length;
+          const total = (ex.sets||[]).length;
+          const pct = total?done/total:0;
+          return (
+            <div key={i} onClick={()=>onSelect(i)} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderRadius:12, background:T.card, marginBottom:8, cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+              <div style={{ width:36, height:36, borderRadius:9, background:T.card2, display:'flex', alignItems:'center', justifyContent:'center', position:'relative' }}>
+                <svg viewBox="0 0 36 36" width="36" height="36" style={{ position:'absolute', inset:0 }}>
+                  <circle cx="18" cy="18" r="15" fill="none" stroke={T.rule} strokeWidth="2.5"/>
+                  <circle cx="18" cy="18" r="15" fill="none" stroke={T.hi} strokeWidth="2.5"
+                    strokeDasharray={`${pct*94.2} 94.2`} strokeLinecap="round" transform="rotate(-90 18 18)"/>
+                </svg>
+                <span style={{ fontFamily:T.mono, fontSize:10, color:pct===1?T.hi:T.ink2, zIndex:1 }}>{i+1}</span>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontFamily:T.display, fontSize:14, fontWeight:600, color:pct===1?T.ink2:T.ink }}>{ex.name}</div>
+                <ML T={T} size={9} c={T.ink2}>{done}/{total} serie{ex.bw?' · BW':''}</ML>
+              </div>
+              {I.arr(pct===1?T.ink2:T.ink2,14)}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ padding:'10px 14px calc(14px + env(safe-area-inset-bottom))', borderTop:`1px solid ${T.rule}`, flexShrink:0 }}>
+        <PBtn onClick={onComplete} T={T} style={{ background:allDone?T.hi:T.card, color:allDone?T.hiInk:T.ink2 }}>
+          {allDone?'COMPLETA ALLENAMENTO ✓':'TERMINA IN ANTICIPO'}
+          {allDone&&I.check(T.hiInk,16)}
+        </PBtn>
+      </div>
+    </div>
+  );
+}
+
+function ExerciseView({ sess, exIdx, updateSess, T, onBack, onRest, onVideo, onNext }) {
+  const ex = sess.exercises[exIdx];
+  if (!ex) return null;
+  const sets = ex.sets||[];
+  const activeIdx = sets.findIndex(s=>!s.done);
+  const [note, setNote] = React.useState('');
+  const [showNote, setShowNote] = React.useState(false);
+
+  const logSet = (si, reps, kg) => {
+    updateSess(s=>{
+      const exs = s.exercises.map((e,ei)=>{
+        if(ei!==exIdx) return e;
+        return { ...e, sets:e.sets.map((set,i)=>i===si?{...set,done:true,reps,kg}:set) };
+      });
+      return { ...s, exercises:exs };
+    });
+    onRest(90);
+  };
+
+  const addSet = () => {
+    updateSess(s=>{
+      const exs = s.exercises.map((e,ei)=>{
+        if(ei!==exIdx) return e;
+        const last = e.sets.length?e.sets[e.sets.length-1]:{};
+        return { ...e, sets:[...e.sets, { id:uid(), reps:last.reps||10, kg:last.kg||0, done:false }] };
+      });
+      return { ...s, exercises:exs };
+    });
+  };
+
+  const doneSets = sets.filter(s=>s.done);
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
+      {/* header */}
+      <div style={{ padding:'calc(env(safe-area-inset-top)+10px) 16px 10px', display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', WebkitTapHighlightColor:'transparent' }} onClick={onBack}>
+          {I.back(T.ink,18)}<ML T={T}>EX {exIdx+1} / {sess.exercises.length}</ML>
+        </div>
+        {onVideo&&<div onClick={onVideo} style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', background:T.card, borderRadius:100, cursor:'pointer' }}>
+          {I.play(T.hi,12)}<ML T={T} c={T.hi} size={9} ls={1}>VIDEO</ML>
+        </div>}
+      </div>
+
+      <div style={{ flex:1, overflowY:'auto', padding:'0 14px 8px' }}>
+        <ML T={T} c={T.hi} ls={1} size={10}>{ex.name.toUpperCase()}{ex.bw?' · CORPO LIBERO':''}</ML>
+        <DL T={T} size={24} style={{ marginTop:4 }}>{ex.name}</DL>
+
+        {/* progress bar */}
+        <div style={{ display:'flex', gap:3, marginTop:12 }}>
+          {sets.map((s,i)=>(
+            <div key={i} style={{ flex:1, height:4, borderRadius:2, background:s.done?T.hi:i===activeIdx?T.card2:T.rule }}/>
+          ))}
+        </div>
+
+        {/* sets table */}
+        <div style={{ marginTop:12 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'28px 1fr 1fr 44px', gap:6, padding:'0 4px 6px' }}>
+            <ML T={T} size={9}>#</ML>
+            <ML T={T} size={9}>REPS</ML>
+            <ML T={T} size={9}>KG</ML>
+            <span/>
+          </div>
+          {sets.map((s,i)=>(
+            <SetRow key={i} set={s} idx={i} active={i===activeIdx} done={s.done} T={T}
+              onLog={(r,k)=>logSet(i,r,k)}/>
+          ))}
+          <button onClick={addSet} style={{ width:'100%', padding:'10px', marginTop:6, borderRadius:10, background:'transparent', border:`1px dashed ${T.rule}`, color:T.ink2, fontFamily:T.mono, fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+            {I.plus(T.ink2,14)} AGGIUNGI SERIE
+          </button>
+        </div>
+
+        {/* note */}
+        <div style={{ marginTop:12 }}>
+          <div onClick={()=>setShowNote(!showNote)} style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
+            <ML T={T} size={9} c={T.ink2}>NOTE</ML>
+            <ML T={T} size={9} c={T.hi}>{showNote?'▲':'▼'}</ML>
+          </div>
+          {showNote&&(
+            <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Forma, sensazioni, note..." rows={3}
+              style={{ width:'100%', marginTop:6, padding:'10px 12px', background:T.card, border:`1px solid ${T.rule}`, borderLeft:`2px solid ${T.hi}`, borderRadius:10, color:T.ink, fontSize:13, lineHeight:1.5, outline:'none' }}/>
+          )}
+        </div>
+      </div>
+
+      <div style={{ padding:'8px 14px calc(12px + env(safe-area-inset-bottom))', borderTop:`1px solid ${T.rule}`, flexShrink:0, display:'flex', gap:8 }}>
+        <GBtn onClick={onBack} T={T} style={{ width:'auto', padding:'12px 16px', flex:0 }}>← Lista</GBtn>
+        <PBtn onClick={()=>{
+          if(activeIdx>=0) { const s=sets[activeIdx]; logSet(activeIdx,s.reps,s.kg); }
+          else onNext();
+        }} T={T} style={{ flex:1 }}>
+          {activeIdx>=0?`LOG SET ${activeIdx+1} →`:'PROSSIMO EX →'}
+          {I.check(T.hiInk,16)}
+        </PBtn>
+      </div>
+    </div>
+  );
+}
+
+function SetRow({ set, idx, active, done, T, onLog }) {
+  const [reps, setReps] = React.useState(set.reps||10);
+  const [kg, setKg] = React.useState(set.kg||0);
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'28px 1fr 1fr 44px', gap:6, alignItems:'center', padding:'8px 6px', marginBottom:4, borderRadius:8, background:active?T.card2:'transparent', border:active?`1px solid ${T.hi}`:`1px solid ${T.rule}` }}>
+      <span style={{ fontFamily:T.mono, fontSize:11, color:T.ink2 }}>{String(idx+1).padStart(2,'0')}</span>
+      {done?(
+        <>
+          <span style={{ fontFamily:T.mono, fontSize:17, color:T.ink2 }}>{set.reps}</span>
+          <span style={{ fontFamily:T.mono, fontSize:17, color:T.ink2 }}>{set.kg}</span>
+          <div style={{ display:'flex', justifyContent:'center' }}>{I.check(T.hi,14)}</div>
+        </>
+      ):active?(
+        <>
+          <SetInput value={reps} onChange={setReps} step={1} T={T} accent/>
+          <SetInput value={kg} onChange={setKg} step={2.5} T={T}/>
+          <button onClick={()=>onLog(reps,kg)} style={{ height:32, borderRadius:8, background:T.hi, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            {I.check(T.hiInk,14)}
+          </button>
+        </>
+      ):(
+        <>
+          <span style={{ fontFamily:T.mono, fontSize:15, color:T.ink3||T.ink2 }}>{set.reps}</span>
+          <span style={{ fontFamily:T.mono, fontSize:15, color:T.ink3||T.ink2 }}>{set.kg}</span>
+          <span style={{ fontFamily:T.mono, fontSize:10, color:T.ink2, textAlign:'center' }}>—</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SetInput({ value, onChange, step, T, accent }) {
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+      <div style={{ fontFamily:T.mono, fontSize:22, color:accent?T.hi:T.ink, fontWeight:600, lineHeight:1 }}>{value}</div>
+      <div style={{ display:'flex', gap:2 }}>
+        {[-step,+step].map(d=>(
+          <button key={d} onClick={()=>onChange(v=>Math.max(0,+(v+d).toFixed(1)))} style={{ width:28, height:18, borderRadius:4, background:T.rule, border:'none', color:T.ink2, fontSize:10, fontFamily:T.mono, cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+            {d>0?'+':''}{d}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RestTimer({ left, total, T, onSkip, onAdd }) {
+  const pct = left/total;
+  const r = 90;
+  const circ = 2*Math.PI*r;
+  const mins = Math.floor(left/60), secs = left%60;
+
+  return (
+    <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, background:T.bg }}>
+      <ML T={T} c={T.hi} ls={2} size={11}>RECUPERO</ML>
+      <div style={{ position:'relative', marginTop:20, marginBottom:20 }}>
+        <svg width="220" height="220" viewBox="0 0 220 220">
+          <circle cx="110" cy="110" r={r} fill="none" stroke={T.rule} strokeWidth="6"/>
+          <circle cx="110" cy="110" r={r} fill="none" stroke={T.hi} strokeWidth="6"
+            strokeDasharray={`${pct*circ} ${circ}`} strokeLinecap="round"
+            transform="rotate(-90 110 110)" style={{ transition:'stroke-dasharray .9s linear' }}/>
+        </svg>
+        <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ fontFamily:T.mono, fontSize:52, color:T.hi, lineHeight:1, fontWeight:600 }}>
+            {mins}:{String(secs).padStart(2,'0')}
+          </div>
+          <ML T={T} c={T.ink2} size={10} ls={1}>secondi rimasti</ML>
+        </div>
+      </div>
+      <div style={{ display:'flex', gap:10 }}>
+        <button onClick={onAdd} style={{ padding:'10px 18px', borderRadius:100, background:T.card2, border:'none', color:T.ink, fontFamily:T.mono, fontSize:11, cursor:'pointer' }}>+15s</button>
+        <button onClick={onSkip} style={{ padding:'10px 22px', borderRadius:100, background:T.hi, border:'none', color:T.hiInk, fontFamily:T.display, fontWeight:700, fontSize:13, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+          SALTA {I.skip(T.hiInk,14)}
+        </button>
+      </div>
+      <div style={{ marginTop:16 }}>
+        <ML T={T} c={T.ink2} size={10}>Prossima serie quando sei pronto</ML>
+      </div>
+    </div>
+  );
+}
+
+function VideoModal({ exName, T, onClose }) {
+  const cues = [
+    'Piedi piantati, scapole retratte e abbassate',
+    'Movimento controllato — 3 secondi in discesa',
+    'Pausa 1 secondo in fondo all\'escursione',
+    'Spingi mantenendo la tensione muscolare',
+  ];
+  return (
+    <div style={{ flex:1, display:'flex', flexDirection:'column', background:'rgba(0,0,0,.85)', padding:14 }} className="fade-in">
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingBottom:10 }}>
+        <div>
+          <ML T={T} c={T.hi} ls={1}>FORM CHECK</ML>
+          <DL T={T} size={16} style={{ marginTop:2 }}>{exName}</DL>
+        </div>
+        <button onClick={onClose} style={{ width:32, height:32, borderRadius:100, background:T.card, border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>{I.close(T.ink,14)}</button>
+      </div>
+      {/* Video placeholder */}
+      <div style={{ borderRadius:14, overflow:'hidden', background:'linear-gradient(140deg,#1a1c19,#0e0f0d)', aspectRatio:'9/12', maxHeight:300, position:'relative', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <svg viewBox="0 0 240 320" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" style={{ position:'absolute', inset:0 }}>
+          <rect width="240" height="320" fill="#1a1c19"/>
+          <line x1="0" y1="240" x2="240" y2="240" stroke="#2a2f25" strokeWidth="1"/>
+          <rect x="50" y="190" width="140" height="14" rx="3" fill="#23261f"/>
+          <rect x="60" y="204" width="6" height="40" fill="#23261f"/>
+          <rect x="174" y="204" width="6" height="40" fill="#23261f"/>
+          <ellipse cx="170" cy="180" rx="14" ry="12" fill="#3a4030"/>
+          <rect x="60" y="178" width="108" height="16" rx="6" fill="#3a4030"/>
+          <line x1="100" y1="180" x2="100" y2="145" stroke="#3a4030" strokeWidth="8" strokeLinecap="round"/>
+          <line x1="130" y1="180" x2="130" y2="145" stroke="#3a4030" strokeWidth="8" strokeLinecap="round"/>
+          <line x1="60" y1="143" x2="170" y2="143" stroke="#c5f24a" strokeWidth="3"/>
+          <rect x="50" y="130" width="14" height="26" rx="2" fill="#c5f24a"/>
+          <rect x="176" y="130" width="14" height="26" rx="2" fill="#c5f24a"/>
+        </svg>
+        <div style={{ width:60, height:60, borderRadius:100, background:'rgba(197,242,74,.9)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 8px 24px rgba(197,242,74,.3)', zIndex:1 }}>
+          {I.play(T.hiInk,24)}
+        </div>
+        <div style={{ position:'absolute', bottom:10, left:10, right:10, background:'rgba(0,0,0,.5)', padding:'6px 10px', borderRadius:8 }}>
+          <div style={{ height:3, background:'rgba(255,255,255,.15)', borderRadius:2 }}><div style={{ width:'30%', height:'100%', background:T.hi, borderRadius:2 }}/></div>
+          <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+            <ML T={T} c={T.ink} size={9}>0:08 / 0:24</ML>
+            <ML T={T} c={T.hiInk||T.hi} size={9}>HD</ML>
+          </div>
+        </div>
+      </div>
+      {/* Coaching cues */}
+      <div style={{ marginTop:10, background:T.card, borderRadius:12, padding:'12px 14px', flex:1 }}>
+        <ML T={T} c={T.hi} ls={1}>COACHING CUES</ML>
+        {cues.map((c,i)=>(
+          <div key={i} style={{ display:'flex', gap:8, marginTop:8, alignItems:'flex-start' }}>
+            <ML T={T} c={T.hi} size={10}>{String(i+1).padStart(2,'0')}</ML>
+            <span style={{ fontSize:13, color:T.ink, lineHeight:1.5 }}>{c}</span>
+          </div>
+        ))}
+      </div>
+      <GBtn onClick={onClose} T={T} style={{ marginTop:10 }}>← TORNA ALLA SERIE</GBtn>
+    </div>
+  );
+}
+
+function WarmupScreen({ kind, T, onClose }) {
+  const exercises = WARMUP[kind] || WARMUP.total;
+  const [current, setCurrent] = React.useState(0);
+  const [timing, setTiming] = React.useState(false);
+  const [sec, setSec] = React.useState(30);
+  const timerRef = React.useRef(null);
+
+  const startTimer = () => {
+    setTiming(true); setSec(30);
+    timerRef.current = setInterval(()=>{
+      setSec(s=>{ if(s<=1){ clearInterval(timerRef.current); setTiming(false); setCurrent(c=>Math.min(c+1,exercises.length-1)); return 0; } return s-1; });
+    },1000);
+  };
+  React.useEffect(()=>()=>clearInterval(timerRef.current),[]);
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
+      <div style={{ padding:'calc(env(safe-area-inset-top)+12px) 16px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${T.rule}`, flexShrink:0 }}>
+        <div>
+          <ML T={T} c={T.hi}>WARM-UP</ML>
+          <DL T={T} size={18} style={{ marginTop:3 }}>{['push','pull','legs','total'][['push','pull','legs','total'].indexOf(kind)]?.toUpperCase()||kind.toUpperCase()}</DL>
+        </div>
+        <button onClick={onClose} style={{ width:32, height:32, borderRadius:8, background:T.card, border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>{I.close(T.ink,16)}</button>
+      </div>
+      <Scr T={T} style={{ padding:'16px 14px' }}>
+        {exercises.map((ex,i)=>(
+          <div key={i} onClick={()=>setCurrent(i)} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderRadius:12, background:i===current?T.card2:T.card, border:`1px solid ${i===current?T.hi:T.rule}`, marginBottom:8, cursor:'pointer' }}>
+            <div style={{ width:28, height:28, borderRadius:100, background:i<current?T.hi:i===current?T.card:T.rule, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              {i<current?I.check(T.hiInk,12):<span style={{ fontFamily:T.mono, fontSize:11, color:i===current?T.hi:T.ink2 }}>{i+1}</span>}
+            </div>
+            <span style={{ fontFamily:T.display, fontSize:14, fontWeight:600, color:i===current?T.hi:i<current?T.ink2:T.ink, flex:1 }}>{ex}</span>
+            {i===current&&!timing&&<button onClick={(e)=>{e.stopPropagation();startTimer();}} style={{ padding:'5px 12px', borderRadius:100, background:T.hi, border:'none', color:T.hiInk, fontFamily:T.mono, fontSize:10, cursor:'pointer' }}>START</button>}
+            {i===current&&timing&&<ML T={T} c={T.hi} size={14}>{sec}s</ML>}
+          </div>
+        ))}
+      </Scr>
+      <div style={{ padding:'10px 14px calc(14px + env(safe-area-inset-bottom))', borderTop:`1px solid ${T.rule}`, flexShrink:0 }}>
+        <PBtn onClick={onClose} T={T}>INIZIA ALLENAMENTO {I.arr(T.hiInk,16)}</PBtn>
+      </div>
+    </div>
+  );
+}
+
+function WorkoutComplete({ sess, T, onClose }) {
+  const vol = sessVolume(sess);
+  const done = sessDone(sess);
+  const dur = sess.completedAt&&sess.startedAt ? Math.floor((new Date(sess.completedAt)-new Date(sess.startedAt))/1000) : 0;
+  const tmpl = TEMPLATES[sess.kind];
+
+  // confetti pieces
+  const confetti = React.useMemo(()=>Array.from({length:20},(_,i)=>({
+    x: Math.random()*100, delay:Math.random()*.8, dur:1.5+Math.random(), color:[T.hi,'#ff7a3d','#5fb8ff','#ffffff'][i%4],
+    size: 6+Math.random()*6,
+  })),[]);
+
+  return (
+    <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'40px 24px 24px', background:T.bg, position:'relative', overflow:'hidden' }}>
+      {confetti.map((c,i)=>(
+        <div key={i} style={{ position:'absolute', top:0, left:`${c.x}%`, width:c.size, height:c.size, background:c.color, borderRadius:c.size/2, animation:`confettiFall ${c.dur}s ${c.delay}s ease-in both` }}/>
+      ))}
+      <div style={{ fontSize:60, marginBottom:8 }}>🏆</div>
+      <ML T={T} c={T.hi} ls={2}>ALLENAMENTO COMPLETATO</ML>
+      <DL T={T} size={28} style={{ textAlign:'center', marginTop:10 }}>
+        {tmpl?.name||sess.kind}
+      </DL>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginTop:24, width:'100%' }}>
+        {[['DURATA',dur?fmtElapsed(dur*1000):'—'],['SERIE',done],['VOLUME',vol>999?`${(vol/1000).toFixed(1)}t`:`${vol}kg`]].map(([k,v])=>(
+          <Card T={T} pad="12px 10px" key={k}>
+            <ML T={T} size={9}>{k}</ML>
+            <div style={{ fontFamily:T.mono, fontSize:18, marginTop:4 }}>{v}</div>
+          </Card>
+        ))}
+      </div>
+      <div style={{ width:'100%', marginTop:18 }}>
+        {sess.exercises.map((ex,i)=>{
+          const done=ex.sets.filter(s=>s.done);
+          return done.length>0&&(
+            <div key={i} style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:`1px solid ${T.rule}` }}>
+              <span style={{ fontSize:13, color:T.ink }}>{ex.name}</span>
+              <ML T={T} size={10} c={T.ink2}>{done.length} serie · {Math.max(...done.map(s=>s.kg))} kg max</ML>
+            </div>
+          );
+        })}
+      </div>
+      <PBtn onClick={onClose} T={T} style={{ marginTop:'auto', marginTop:24 }}>
+        TORNA ALLA HOME {I.arr(T.hiInk,16)}
+      </PBtn>
+    </div>
+  );
+}
+
+// ─── CALENDAR SCREEN ──────────────────────────────────────────────────
+function CalendarScreen({ state, update, T, onStartWorkout }) {
+  const now = new Date();
+  const [viewYear, setViewYear] = React.useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = React.useState(now.getMonth());
+  const completedSessions = state.sessions.filter(s=>s.completedAt);
+
+  // build heatmap
+  const heatmap = React.useMemo(()=>{
+    const map = {};
+    for (const sess of completedSessions) { map[sess.date]=(map[sess.date]||0)+sessVolume(sess); }
+    return map;
+  },[completedSessions]);
+
+  const daysInMonth = new Date(viewYear,viewMonth+1,0).getDate();
+  const firstDow = (new Date(viewYear,viewMonth,1).getDay()+6)%7; // Mon=0
+  const cells = [];
+  for(let i=0;i<firstDow;i++) cells.push(null);
+  for(let d=1;d<=daysInMonth;d++) cells.push(d);
+
+  const today = todayStr();
+  const maxVol = Math.max(...Object.values(heatmap),1);
+
+  const intensityColor = (vol) => {
+    if(!vol) return T.card;
+    const pct = vol/maxVol;
+    if(pct<.25) return T.mode==='dark'?'#3a4030':'#d0e0a0';
+    if(pct<.5)  return T.mode==='dark'?'#6a8030':'#a0c040';
+    if(pct<.8)  return T.mode==='dark'?'#9ab830':'#80a820';
+    return T.hi;
+  };
+
+  // upcoming 7 days schedule
+  const upcoming = [];
+  for(let i=0;i<7;i++){
+    const d=new Date(); d.setDate(d.getDate()+i);
+    const dow=d.getDay();
+    const kind=state.schedule[dow];
+    if(kind) upcoming.push({ date:fmtDateShort(d), label:i===0?'OGGI':i===1?'DOMANI':`+${i}g`, kind, tmpl:TEMPLATES[kind] });
+  }
+
+  const prevMonth=()=>{ if(viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); };
+  const nextMonth=()=>{ if(viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1); };
+
+  return (
+    <Scr T={T} style={{ paddingBottom:16 }}>
+      <div style={{ padding:'16px 18px 0', display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+        <div>
+          <ML T={T}>{viewYear}</ML>
+          <DL T={T} size={26} style={{ marginTop:4 }}>{monthName(viewMonth)}<span style={{ color:T.hi }}>.</span></DL>
+        </div>
+        <div style={{ display:'flex', gap:6 }}>
+          <button onClick={prevMonth} style={{ padding:'6px 12px', background:T.card, borderRadius:8, border:'none', color:T.ink, fontFamily:T.mono, fontSize:11, cursor:'pointer' }}>←</button>
+          <button onClick={nextMonth} style={{ padding:'6px 12px', background:T.card, borderRadius:8, border:'none', color:T.ink, fontFamily:T.mono, fontSize:11, cursor:'pointer' }}>→</button>
+        </div>
+      </div>
+
+      {/* heatmap grid */}
+      <div style={{ padding:'14px 14px 0' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:5, marginBottom:6 }}>
+          {['L','M','M','G','V','S','D'].map((d,i)=>(
+            <div key={i} style={{ textAlign:'center', fontFamily:T.mono, fontSize:9, color:T.ink2 }}>{d}</div>
+          ))}
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:5 }}>
+          {cells.map((d,i)=>{
+            if(!d) return <div key={i}/>;
+            const ds=`${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const vol=heatmap[ds]||0;
+            const isToday=ds===today;
+            return (
+              <div key={i} style={{ aspectRatio:'1', borderRadius:6, background:intensityColor(vol), display:'flex', alignItems:'center', justifyContent:'center', outline:isToday?`2px solid ${T.hi}`:'none', outlineOffset:1 }}>
+                <span style={{ fontFamily:T.mono, fontSize:9, color:vol>0?T.hiInk:(isToday?T.hi:T.ink2), fontWeight:600 }}>{d}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:10 }}>
+          <ML T={T} size={9}>intensità volume</ML>
+          <div style={{ display:'flex', gap:3 }}>
+            {[T.card,'#3a4030','#9ab830',T.hi].map((c,i)=>(<div key={i} style={{ width:14, height:14, borderRadius:3, background:c }}/>))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height:1, background:T.rule, margin:'14px 14px 0' }}/>
+
+      {/* Schedule editor */}
+      <div style={{ padding:'12px 14px 0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <ML T={T} size={9}>SCHEDA SETTIMANALE</ML>
+      </div>
+      <div style={{ display:'flex', gap:5, padding:'8px 14px 0', overflowX:'auto' }}>
+        {['L','M','M','G','V','S','D'].map((label,i)=>{
+          const dow=(i+1)%7;
+          const kind=state.schedule[dow];
+          const tmpl=kind?TEMPLATES[kind]:null;
+          return (
+            <div key={i} style={{ flexShrink:0, width:42, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+              <ML T={T} size={9}>{label}</ML>
+              <div onClick={()=>{
+                const kinds=Object.keys(TEMPLATES);
+                const curr=kinds.indexOf(kind);
+                const next=curr===-1?kinds[0]:(curr===kinds.length-1?null:kinds[curr+1]);
+                update(s=>({...s,schedule:{...s.schedule,[dow]:next}}));
+              }} style={{ width:42, height:42, borderRadius:10, background:kind?T.card2:T.card, border:`1px solid ${kind?T.hi:T.rule}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+                {kind?<ML T={T} size={9} c={T.hi}>{TEMPLATES[kind].name.slice(0,2)}</ML>:<ML T={T} size={9}>—</ML>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Upcoming */}
+      <div style={{ padding:'14px 14px 0' }}>
+        <ML T={T} size={9}>PROSSIMI 7 GIORNI</ML>
+        {upcoming.length===0&&<div style={{ padding:'20px 0', textAlign:'center', color:T.ink2, fontSize:13 }}>Nessun allenamento programmato</div>}
+        {upcoming.map((u,i)=>(
+          <div key={i} onClick={()=>onStartWorkout(u.kind,null)} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', marginTop:8, background:T.card, borderRadius:10, cursor:'pointer', WebkitTapHighlightColor:'transparent' }}>
+            <div style={{ width:50 }}>
+              <div style={{ fontFamily:T.mono, fontSize:10, color:T.ink }}>{u.date.split(' ').slice(0,2).join(' ')}</div>
+              <ML T={T} size={9} c={u.label==='OGGI'?T.hi:T.ink2}>{u.label}</ML>
+            </div>
+            <div style={{ width:3, height:32, background:T.hi, borderRadius:2 }}/>
+            <div style={{ flex:1 }}>
+              <div style={{ fontFamily:T.display, fontSize:14, fontWeight:600 }}>{u.tmpl.name}</div>
+              <ML T={T} size={9} c={T.ink2}>{u.tmpl.sub}</ML>
+            </div>
+            {I.arr(T.ink2,14)}
+          </div>
+        ))}
+      </div>
+    </Scr>
+  );
+}
+
+// ─── STATS SCREEN ─────────────────────────────────────────────────────
+function StatsScreen({ state, T }) {
+  const completedSessions = state.sessions.filter(s=>s.completedAt);
+  const streak = calcStreak(completedSessions);
+  const totalVol = calcTotalVolume(completedSessions);
+  const totalSets = calcTotalSets(completedSessions);
+  const prs = calcPRs(completedSessions);
+  const unlocked = checkAchievements(completedSessions);
+  const [tab, setTab] = React.useState('volume'); // volume | prs | streak | achievements
+
+  // last 8 weeks volume
+  const weekVols = React.useMemo(()=>{
+    const weeks=[];
+    for(let w=7;w>=0;w--){
+      const start=new Date(); start.setDate(start.getDate()-w*7-6);
+      const end=new Date(); end.setDate(end.getDate()-w*7);
+      const vol=completedSessions.filter(s=>{
+        const d=isoDate(s.date); return d>=start&&d<=end;
+      }).reduce((t,s)=>t+sessVolume(s),0);
+      weeks.push({ label:`W${8-w}`, vol });
+    }
+    const max=Math.max(...weeks.map(w=>w.vol),1);
+    return weeks.map(w=>({...w,pct:w.vol/max}));
+  },[completedSessions]);
+
+  // 6-week streak heatmap
+  const heatCells = React.useMemo(()=>{
+    const done=new Set(completedSessions.map(s=>s.date));
+    const cells=[];
+    for(let i=41;i>=0;i--){
+      const d=new Date(); d.setDate(d.getDate()-i);
+      cells.push({ ds:d.toISOString().slice(0,10), done:done.has(d.toISOString().slice(0,10)) });
+    }
+    return cells;
+  },[completedSessions]);
+
+  return (
+    <Scr T={T} style={{ paddingBottom:16 }}>
+      <div style={{ padding:'16px 18px 8px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <DL T={T} size={26}>Performance<span style={{ color:T.hi }}>.</span></DL>
+        <ML T={T} size={9} c={T.ink2}>{completedSessions.length} sessioni</ML>
+      </div>
+
+      {/* tab pills */}
+      <div style={{ display:'flex', gap:6, padding:'0 14px 10px', overflowX:'auto' }}>
+        {[['volume','Volume'],['prs','Record'],['streak','Streak'],['achievements','Badge']].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{ padding:'7px 14px', borderRadius:100, background:tab===k?T.hi:T.card, color:tab===k?T.hiInk:T.ink2, border:'none', cursor:'pointer', fontFamily:T.mono, fontSize:10, letterSpacing:.5, flexShrink:0, WebkitTapHighlightColor:'transparent' }}>{l}</button>
+        ))}
+      </div>
+
+      {tab==='volume'&&(
+        <div style={{ padding:'0 14px' }}>
+          <Card T={T} pad="16px" style={{ marginBottom:10 }}>
+            <ML T={T} size={9}>VOLUME TOTALE ACCUMULATO</ML>
+            <div style={{ display:'flex', alignItems:'baseline', gap:6, marginTop:4 }}>
+              <DL T={T} size={36} color={T.hi}>{totalVol>999?(totalVol/1000).toFixed(1):totalVol}</DL>
+              <ML T={T} size={13}>{totalVol>999?'t':'kg'}</ML>
+            </div>
+            <div style={{ display:'flex', alignItems:'flex-end', gap:5, height:64, marginTop:14 }}>
+              {weekVols.map((w,i)=>(
+                <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                  <div style={{ width:'100%', height:`${Math.max(4,w.pct*100)}%`, background:i===7?T.hi:T.card2, borderRadius:3, minHeight:4 }}/>
+                  <ML T={T} size={8} c={i===7?T.hi:T.ink2}>{w.label}</ML>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            {[['SESSIONI',completedSessions.length,'totale'],['SERIE',totalSets,'completate'],['STREAK',`${streak}d`,streak>0?'🔥':'–'],['MEDIO',completedSessions.length?Math.round(totalVol/completedSessions.length)+'kg':'–','vol/sess']].map(([k,v,d])=>(
+              <Card T={T} pad="12px" key={k}>
+                <ML T={T} size={9}>{k}</ML>
+                <div style={{ fontFamily:T.mono, fontSize:22, marginTop:4 }}>{v}</div>
+                <ML T={T} size={9} c={T.ink2}>{d}</ML>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab==='prs'&&(
+        <div style={{ padding:'0 14px' }}>
+          {Object.keys(prs).length===0&&(
+            <div style={{ textAlign:'center', padding:'40px 0', color:T.ink2 }}>
+              <div style={{ fontSize:40, marginBottom:8 }}>🏋️</div>
+              <div style={{ fontSize:14 }}>Completa alcuni allenamenti per vedere i tuoi record!</div>
+            </div>
+          )}
+          {Object.entries(prs).map(([name,pr],i)=>(
+            <div key={i} style={{ display:'flex', alignItems:'center', padding:'12px 14px', background:T.card, borderRadius:12, marginBottom:8 }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontFamily:T.display, fontSize:14, fontWeight:600 }}>{name}</div>
+                <ML T={T} size={9} c={T.ink2}>{fmtDateShort(pr.date)}</ML>
+              </div>
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontFamily:T.mono, fontSize:22, color:T.hi }}>{pr.kg} <span style={{ fontSize:12, color:T.ink2 }}>kg</span></div>
+                <ML T={T} size={9} c={T.ink2}>×{pr.reps} · 1RM≈{Math.round(pr.e1rm)}kg</ML>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab==='streak'&&(
+        <div style={{ padding:'0 14px' }}>
+          <Card T={T} pad="14px" style={{ marginBottom:12 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+              <ML T={T} size={9}>STREAK ATTIVA</ML>
+              <ML T={T} size={9} c={T.ink2}>6 settimane</ML>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:8 }}>
+              {I.flame(T.hi,24)}
+              <DL T={T} size={48} color={T.hi} style={{ lineHeight:1 }}>{streak}</DL>
+              <ML T={T} size={14}>giorni</ML>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:3, marginTop:12 }}>
+              {['L','M','M','G','V','S','D'].map((d,i)=><div key={i} style={{ textAlign:'center', fontFamily:T.mono, fontSize:8, color:T.ink2, marginBottom:2 }}>{d}</div>)}
+              {heatCells.map((c,i)=>(
+                <div key={i} style={{ aspectRatio:'1', borderRadius:4, background:c.done?T.hi:T.rule }}/>
+              ))}
+            </div>
+          </Card>
+          {completedSessions.length===0&&<div style={{ textAlign:'center', padding:'20px', color:T.ink2, fontSize:13 }}>Completa il tuo primo allenamento per iniziare la streak!</div>}
+        </div>
+      )}
+
+      {tab==='achievements'&&(
+        <div style={{ padding:'0 14px' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            {ACHIEVEMENTS.map(a=>{
+              const on=unlocked.has(a.id);
+              return (
+                <Card T={T} pad="14px" key={a.id} accent={on} style={{ opacity:on?1:.5 }}>
+                  <div style={{ fontSize:28 }}>{a.icon}</div>
+                  <div style={{ fontFamily:T.display, fontSize:14, fontWeight:700, marginTop:6, color:on?T.hi:T.ink }}>{a.label}</div>
+                  <div style={{ fontSize:11, color:T.ink2, marginTop:3, lineHeight:1.4 }}>{a.desc}</div>
+                  {on&&<div style={{ marginTop:6, display:'inline-block', padding:'2px 8px', background:T.hi, borderRadius:100, fontFamily:T.mono, fontSize:9, color:T.hiInk }}>SBLOCCATO</div>}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Scr>
+  );
+}
+
+// ─── PROFILE SCREEN ───────────────────────────────────────────────────
+function ProfileScreen({ state, update, T }) {
+  const p = state.profile;
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState({ ...p });
+
+  const bmi = (() => { const h=p.height/100; return h?(p.weight/(h*h)).toFixed(1):0; })();
+
+  const saveProfile = () => {
+    update(s=>({ ...s, profile:draft }));
+    setEditing(false);
+  };
+
+  const exportData = () => {
+    const data = JSON.stringify(state, null, 2);
+    const blob = new Blob([data], { type:'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url; a.download='reps-export.json'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const resetApp = () => {
+    if (confirm('Sei sicuro? Tutti i dati verranno eliminati.')) {
+      localStorage.removeItem(SK);
+      window.location.reload();
+    }
+  };
+
+  return (
+    <Scr T={T} style={{ paddingBottom:24 }}>
+      <div style={{ padding:'16px 18px 0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <DL T={T} size={24}>{p.name||'Profilo'}<span style={{ color:T.hi }}>.</span></DL>
+        <button onClick={()=>{ setDraft({...p}); setEditing(!editing); }} style={{ padding:'6px 14px', borderRadius:8, background:T.card, border:'none', color:editing?T.hi:T.ink, fontFamily:T.mono, fontSize:10, cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
+          {I.edit(editing?T.hi:T.ink,14)}{editing?'ANNULLA':'MODIFICA'}
+        </button>
+      </div>
+
+      {/* biometric card */}
+      <div style={{ margin:'12px 14px 0' }}>
+        <Card T={T} accent={editing} pad="16px">
+          <ML T={T} size={9} c={T.hi}>BIOMETRIA</ML>
+          {editing?(
+            <div style={{ marginTop:12 }}>
+              {[{k:'nome',val:draft.name,set:v=>setDraft({...draft,name:v}),type:'text'},{k:'età',val:draft.age,set:v=>setDraft({...draft,age:+v}),type:'number'},{k:'peso kg',val:draft.weight,set:v=>setDraft({...draft,weight:+v}),type:'number'},{k:'altezza cm',val:draft.height,set:v=>setDraft({...draft,height:+v}),type:'number'}].map(f=>(
+                <div key={f.k} style={{ marginBottom:10 }}>
+                  <ML T={T} size={9} ls={1}>{f.k.toUpperCase()}</ML>
+                  <input type={f.type} value={f.val} onChange={e=>f.set(e.target.value)}
+                    style={{ width:'100%', padding:'10px 12px', marginTop:4, background:T.bg, border:`1px solid ${T.rule}`, borderRadius:10, color:T.ink, fontSize:16, fontFamily:T.display, fontWeight:600, outline:'none' }}/>
+                </div>
+              ))}
+              <div style={{ marginBottom:10 }}>
+                <ML T={T} size={9} ls={1}>SESSO</ML>
+                <div style={{ display:'flex', gap:8, marginTop:6 }}>
+                  {['M','F'].map(sx=>(
+                    <button key={sx} onClick={()=>setDraft({...draft,sex:sx})} style={{ flex:1, padding:'10px', borderRadius:10, background:draft.sex===sx?T.hi:T.bg, border:`1px solid ${draft.sex===sx?T.hi:T.rule}`, color:draft.sex===sx?T.hiInk:T.ink, fontFamily:T.display, fontWeight:600, cursor:'pointer' }}>{sx==='M'?'Uomo':'Donna'}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom:10 }}>
+                <ML T={T} size={9} ls={1}>OBIETTIVO</ML>
+                <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:6 }}>
+                  {[['mass','Massa muscolare'],['cut','Dimagrire'],['strong','Forza'],['tone','Tonificare']].map(([k,l])=>(
+                    <button key={k} onClick={()=>setDraft({...draft,goal:k})} style={{ padding:'10px 14px', borderRadius:10, textAlign:'left', background:draft.goal===k?T.hi:T.bg, border:`1px solid ${draft.goal===k?T.hi:T.rule}`, color:draft.goal===k?T.hiInk:T.ink, fontFamily:T.display, fontSize:14, fontWeight:600, cursor:'pointer' }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <PBtn onClick={saveProfile} T={T}>SALVA {I.check(T.hiInk,16)}</PBtn>
+            </div>
+          ):(
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:12 }}>
+              {[['Nome',p.name||'—'],['Sesso',p.sex==='M'?'Uomo':'Donna'],['Età',`${p.age} anni`],['Peso',`${p.weight} kg`],['Altezza',`${p.height} cm`],['BMI',bmi],['Obiettivo',{mass:'Massa',cut:'Dimagrire',strong:'Forza',tone:'Tonificare'}[p.goal]||p.goal]].map(([k,v])=>(
+                <div key={k}>
+                  <ML T={T} size={9}>{k}</ML>
+                  <div style={{ fontFamily:T.display, fontSize:15, fontWeight:600, marginTop:2 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Theme */}
+      <div style={{ margin:'12px 14px 0' }}>
+        <Card T={T} pad="14px">
+          <ML T={T} size={9} c={T.hi}>TEMA</ML>
+          <div style={{ marginTop:12 }}>
+            <ML T={T} size={9} ls={1}>MODALITÀ</ML>
+            <div style={{ display:'flex', gap:8, marginTop:6 }}>
+              {[['dark','Dark 🌙'],['light','Light ☀️']].map(([k,l])=>(
+                <button key={k} onClick={()=>update(s=>({...s,prefs:{...s.prefs,mode:k}}))} style={{ flex:1, padding:'10px', borderRadius:10, background:state.prefs.mode===k?T.hi:T.bg, border:`1px solid ${state.prefs.mode===k?T.hi:T.rule}`, color:state.prefs.mode===k?T.hiInk:T.ink, fontFamily:T.display, fontWeight:600, fontSize:13, cursor:'pointer' }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginTop:12 }}>
+            <ML T={T} size={9} ls={1}>COLORE ACCENTO</ML>
+            <div style={{ display:'flex', gap:10, marginTop:8 }}>
+              {[['#c5f24a','Lime'],['#ff7a3d','Arancio'],['#5fb8ff','Blu']].map(([c,l])=>(
+                <div key={c} onClick={()=>update(s=>({...s,prefs:{...s.prefs,accent:c}}))} style={{ flex:1, height:36, borderRadius:10, background:c, outline:state.prefs.accent===c?`2px solid ${T.ink}`:'none', outlineOffset:2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  {state.prefs.accent===c&&I.check(T.hiInk,16)}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Data */}
+      <div style={{ margin:'12px 14px 0' }}>
+        <Card T={T} pad="14px">
+          <ML T={T} size={9} c={T.hi}>DATI</ML>
+          <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
+            <button onClick={exportData} style={{ padding:'12px 14px', borderRadius:10, background:T.bg, border:`1px solid ${T.rule}`, color:T.ink, fontFamily:T.display, fontSize:14, fontWeight:600, cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <span>Esporta dati (JSON)</span>
+              {I.arr(T.ink2,14)}
+            </button>
+            <button onClick={resetApp} style={{ padding:'12px 14px', borderRadius:10, background:T.bg, border:`1px solid ${T.red}`, color:T.red, fontFamily:T.display, fontSize:14, fontWeight:600, cursor:'pointer', textAlign:'left' }}>
+              Elimina tutti i dati
+            </button>
+          </div>
+        </Card>
+      </div>
+
+      <div style={{ textAlign:'center', marginTop:20 }}>
+        <ML T={T} size={9} c={T.ink2}>REPS v1.0 · PWA · Local-first · GDPR</ML>
+      </div>
+    </Scr>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────
+function App() {
+  const [state, update] = useAppState();
+  const [tab, setTab] = React.useState('home');
+  const [workout, setWorkout] = React.useState(null); // { sessionId, kind } | null
+
+  const T = mkTheme(state.prefs?.mode||'dark', state.prefs?.accent||'#c5f24a');
+
+  if (!state.setup) return <Onboarding state={state} update={update}/>;
+
+  const startWorkout = (kind, existingId) => {
+    if (existingId) {
+      setWorkout({ sessionId:existingId, kind });
+      return;
+    }
+    // create new session
+    const tmpl = TEMPLATES[kind];
+    if (!tmpl) return;
+    const id = uid();
+    const session = {
+      id, kind, date:todayStr(), startedAt:new Date().toISOString(), completedAt:null,
+      exercises: tmpl.exercises.map(ex=>({
+        name:ex.name, bw:ex.bw,
+        sets: Array.from({length:ex.targetSets},()=>({ id:uid(), reps:ex.targetReps, kg:ex.bw?0:20, done:false })),
+      })),
+    };
+    update(s=>({ ...s, sessions:[...s.sessions,session], activeSessionId:id }));
+    setWorkout({ sessionId:id, kind });
+  };
+
+  const closeWorkout = () => {
+    setWorkout(null);
+    setTab('home');
+  };
+
+  return (
+    <AppFrame T={T}>
+      {workout&&(
+        <WorkoutScreen
+          sessionId={workout.sessionId}
+          kind={workout.kind}
+          sessions={state.sessions}
+          update={update}
+          T={T}
+          onClose={closeWorkout}
+        />
+      )}
+      {!workout&&(
+        <>
+          <Scr T={T} style={{ flex:'none', height:'none', display:'contents' }}>
+            {tab==='home'&&<HomeScreen state={state} update={update} T={T} onStartWorkout={startWorkout}/>}
+            {tab==='cal'&&<CalendarScreen state={state} update={update} T={T} onStartWorkout={startWorkout}/>}
+            {tab==='stats'&&<StatsScreen state={state} T={T}/>}
+            {tab==='me'&&<ProfileScreen state={state} update={update} T={T}/>}
+          </Scr>
+          <TabBar active={tab} onChange={setTab} T={T}/>
+        </>
+      )}
+    </AppFrame>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
